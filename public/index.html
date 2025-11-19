@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema Delivery - Login</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 min-h-screen flex items-center justify-center">
+    <div class="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
+        <div class="text-center mb-8">
+            <div class="text-6xl mb-4">🚚</div>
+            <h1 class="text-4xl font-bold text-gray-800">Sistema Delivery</h1>
+            <p class="text-gray-600 mt-2">Inicia sesión para continuar</p>
+        </div>
+        
+        <form id="loginForm" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                <input 
+                    type="email" 
+                    id="email"
+                    class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    required
+                    placeholder="tu@email.com"
+                />
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Contraseña</label>
+                <input 
+                    type="password" 
+                    id="password"
+                    class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    required
+                    placeholder="••••••••"
+                />
+            </div>
+
+            <button 
+                type="submit" 
+                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition"
+            >
+                Iniciar Sesión
+            </button>
+        </form>
+
+        <div class="mt-6 p-4 bg-gray-50 rounded-lg text-sm">
+            <p class="font-semibold text-gray-700 mb-2">Credenciales de prueba:</p>
+            <div class="space-y-1 text-gray-600">
+                <p>👤 <strong>Cliente:</strong> cliente@delivery.com / cliente123</p>
+                <p>🚗 <strong>Conductor:</strong> conductor@delivery.com / conductor123</p>
+                <p>⚙️ <strong>Admin:</strong> admin@delivery.com / admin123</p>
+            </div>
+        </div>
+
+        <div id="error" class="mt-4 hidden p-3 bg-red-100 text-red-700 rounded-lg text-sm"></div>
+    </div>
+
+    <script>
+        const form = document.getElementById('loginForm');
+        const errorDiv = document.getElementById('error');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            errorDiv.classList.add('hidden');
+
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+
+            try {
+                const response = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Error al iniciar sesión');
+                }
+
+                // Guardar token
+                localStorage.setItem('token', data.token);
+                localStorage.setItem('user', JSON.stringify(data.user));
+
+                // Redirigir según rol
+                if (data.user.role === 'client') {
+                    window.location.href = '/cliente';
+                } else if (data.user.role === 'driver') {
+                    window.location.href = '/conductor';
+                } else if (data.user.role === 'admin') {
+                    window.location.href = '/admin';
+                }
+            } catch (error) {
+                errorDiv.textContent = error.message;
+                errorDiv.classList.remove('hidden');
+            }
+        });
+    </script>
+</body>
+</html>

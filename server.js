@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const http = require('http');
+const path = require('path');
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 
@@ -16,12 +17,13 @@ const io = new Server(server, {
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(express.static('public'));
 
 // Constantes
 const JWT_SECRET = 'tu-secreto-super-seguro';
-const PORT = 3000;
-const COMMISSION_RATE = 0.20; // 20% para ti
-const SERVICE_FEE = 10; // $10 fijo para ti
+const PORT = process.env.PORT || 3000;
+const COMMISSION_RATE = 0.20;
+const SERVICE_FEE = 10;
 
 // Base de datos simulada
 let database = {
@@ -113,6 +115,26 @@ const authenticateToken = (req, res, next) => {
 };
 
 // ============================================
+// RUTAS FRONTEND
+// ============================================
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.get('/cliente', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'cliente.html'));
+});
+
+app.get('/conductor', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'conductor.html'));
+});
+
+app.get('/admin', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
+// ============================================
 // RUTAS DE AUTENTICACIÓN
 // ============================================
 
@@ -190,7 +212,6 @@ app.post('/api/orders', authenticateToken, (req, res) => {
       }
     });
 
-    // CÁLCULOS CON COMISIÓN
     const subtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     const deliveryFee = calculateDeliveryFee(minDistance);
     const serviceFee = SERVICE_FEE;
@@ -380,7 +401,7 @@ app.get('/api/users/profile', authenticateToken, (req, res) => {
 app.get('/api/admin/stats', authenticateToken, (req, res) => {
   try {
     if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'No autorizado - Solo administradores' });
+      return res.status(403).json({ error: 'No autorizado' });
     }
 
     const allOrders = database.orders;
@@ -388,39 +409,24 @@ app.get('/api/admin/stats', authenticateToken, (req, res) => {
     const today = new Date().toDateString();
 
     const stats = {
-      // Pedidos
       totalOrders: allOrders.length,
       completedOrders: completedOrders.length,
       pendingOrders: allOrders.filter(o => o.status === 'pending').length,
       activeOrders: allOrders.filter(o => !['delivered', 'cancelled'].includes(o.status)).length,
       cancelledOrders: allOrders.filter(o => o.status === 'cancelled').length,
-      
-      // GANANCIAS DE LA PLATAFORMA (LO QUE TÚ GANAS)
       totalPlatformEarnings: completedOrders.reduce((sum, o) => sum + (o.platformEarnings || 0), 0),
       totalCommissions: completedOrders.reduce((sum, o) => sum + (o.commission || 0), 0),
       totalServiceFees: completedOrders.reduce((sum, o) => sum + (o.serviceFee || 0), 0),
-      
-      // Lo que han ganado los conductores
       totalDriverEarnings: completedOrders.reduce((sum, o) => sum + (o.driverEarnings || 0), 0),
-      
-      // Ingresos totales del sistema
       totalRevenue: completedOrders.reduce((sum, o) => sum + o.total, 0),
-      
-      // Conductores
       totalDrivers: database.users.filter(u => u.role === 'driver').length,
       availableDrivers: database.users.filter(u => u.role === 'driver' && u.available).length,
-      
-      // Clientes
       totalClients: database.users.filter(u => u.role === 'client').length,
-      
-      // Estadísticas del día
       today: today,
       ordersToday: allOrders.filter(o => new Date(o.createdAt).toDateString() === today).length,
       earningsToday: completedOrders
         .filter(o => o.deliveredAt && new Date(o.deliveredAt).toDateString() === today)
         .reduce((sum, o) => sum + (o.platformEarnings || 0), 0),
-      
-      // Promedios
       averageOrderValue: completedOrders.length > 0 
         ? completedOrders.reduce((sum, o) => sum + o.total, 0) / completedOrders.length 
         : 0,
@@ -434,10 +440,6 @@ app.get('/api/admin/stats', authenticateToken, (req, res) => {
     res.status(500).json({ error: 'Error al obtener estadísticas', details: error.message });
   }
 });
-
-// ============================================
-// RUTAS DE ESTADÍSTICAS
-// ============================================
 
 app.get('/api/stats', authenticateToken, (req, res) => {
   try {
@@ -522,14 +524,6 @@ app.get('/health', (req, res) => {
   });
 });
 
-app.get('/', (req, res) => {
-  res.json({
-    message: '🚚 API de Sistema de Delivery',
-    version: '2.0.0',
-    features: ['Comisiones', 'Estadísticas Admin', 'Tracking en tiempo real']
-  });
-});
-
 // 404
 app.use((req, res) => {
   res.status(404).json({ error: 'Ruta no encontrada' });
@@ -538,12 +532,13 @@ app.use((req, res) => {
 // Iniciar servidor
 server.listen(PORT, () => {
   console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
-  console.log(`📡 WebSocket habilitado para tiempo real`);
+  console.log(`📡 WebSocket habilitado`);
   console.log(`💰 Comisión: ${COMMISSION_RATE * 100}% | Fee: $${SERVICE_FEE}`);
-  console.log(`\n📝 Credenciales de prueba:`);
-  console.log(`   Cliente: cliente@delivery.com / cliente123`);
-  console.log(`   Conductor: conductor@delivery.com / conductor123`);
-  console.log(`   Admin: admin@delivery.com / admin123`);
+  console.log(`\n🌐 URLs disponibles:`);
+  console.log(`   / → Landing`);
+  console.log(`   /cliente → Panel Cliente`);
+  console.log(`   /conductor → Panel Conductor`);
+  console.log(`   /admin → Panel Admin`);
 });
 
 module.exports = { app, server, io };

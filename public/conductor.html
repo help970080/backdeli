@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel Conductor - Delivery</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div id="root"></div>
+
+    <script>
+        const API_URL = '/api';
+        const SOCKET_URL = window.location.origin;
+        
+        let user = null;
+        let token = localStorage.getItem('token');
+        let socket = null;
+        let myOrders = [];
+        let stats = null;
+
+        if (!token) {
+            window.location.href = '/';
+        }
+
+        async function apiCall(endpoint, method = 'GET', body = null) {
+            const options = {
+                method,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                ...(body && { body: JSON.stringify(body) })
+            };
+
+            try {
+                const response = await fetch(`${API_URL}${endpoint}`, options);
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'Error en la solicitud');
+                }
+                
+                return data;
+            } catch (error) {
+                alert(error.message);
+                throw error;
+            }
+        }
+
+        async function loadOrders() {
+            try {
+                const data = await apiCall('/orders');
+                myOrders = data.orders;
+                render();
+            } catch (error) {
+                console.error('Error cargando pedidos:', error);
+            }
+        }
+
+        async function loadStats() {
+            try {
+                const data = await apiCall('/stats');
+                stats = data.stats;
+                render();
+            } catch (error) {
+                console.error('Error cargando estadísticas:', error);
+            }
+        }
+
+        async function updateOrderStatus(orderId, status) {
+            try {
+                await apiCall(`/orders/${orderId}/status`, 'PUT', { status });
+                alert('Estado actualizado');
+                loadOrders();
+                loadStats();
+            } catch (error) {
+                console.error('Error actualizando estado:', error);
+            }
+        }
+
+        function handleLogout() {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            window.location.href = '/';
+        }
+
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('es-MX', {
+                style: 'currency',
+                currency: 'MXN'
+            }).format(amount || 0);
+        }
+
+        function getStatusColor(status) {
+            const colors = {
+                'pending': 'bg-yellow-500',
+                'accepted': 'bg-blue-500',
+                'preparing': 'bg-indigo-500',
+                'on_way': 'bg-purple-500',
+                'delivered': 'bg-green-500',
+                'cancelled': 'bg-red-500'
+            };
+            return colors[status] || 'bg-gray-500';
+        }
+
+        function getStatusText(status) {
+            const texts = {
+                'pending': 'Pendiente',
+                'accepted': 'Aceptado',
+                'preparing': 'Preparando',
+                'on_way': 'En camino',
+                'delivered': 'Entregado',
+                'cancelled': 'Cancelado'
+            };
+            return texts[status] || status;
+        }
+
+        function getNextStatus(currentStatus) {
+            const flow = {
+                'pending': 'accepted',
+                'accepted': 'preparing',
+                'preparing': 'on_way',
+                'on_way': 'delivered'
+            };
+            return flow[currentStatus];
+        }
+
+        function getNextStatusText(currentStatus) {
+            const texts = {
+                'pending': 'Aceptar Pedido',
+                'accepted': 'Marcar Preparando',
+                'preparing': 'Iniciar Entrega',
+                'on_way': 'Marcar Entregado'
+            };
+            return texts[currentStatus] || 'Actualizar';
+        }
+
+        function render() {
+            const root = document.getElementById('root');
+            const activeOrders = myOrders.filter(o => !['delivered', 'cancelled'].includes(o.status));
+            const completedOrders = myOrders.filter(o => ['delivered', 'cancelled'].includes(o.status));
+
+            root.innerHTML = `
+                <div class="container mx-auto px-4 py-6">
+                    <!-- Header -->
+                    <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+                        <div class="flex justify-between items-center">
+                            <div class="flex items-center gap-3">
+                                <div class="text-4xl">🚗</div>
+                                <div>
+                                    <h1 class="text-2xl font-bold text-gray-800">Panel Conductor</h1>
+                                    <p class="text-gray-600">${user.name}</p>
+                                </div>
+                            </div>
+                            <button onclick="handleLogout()" class="bg-red-500 hover:bg-red-600 text-white px-6 py-2 rounded-lg transition">
+                                Cerrar Sesión
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Estadísticas -->
+                    ${stats ? `
+                        <div class="grid md:grid-cols-4 gap-4 mb-6">
+                            <div class="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg p-6 text-white">
+                                <div class="text-sm opacity-80">Entregas Totales</div>
+                                <div class="text-3xl font-bold mt-2">${stats.totalDeliveries}</div>
+                            </div>
+                            <div class="bg-gradient-to-br from-green-500 to-green-600 rounded-lg shadow-lg p-6 text-white">
+                                <div class="text-sm opacity-80">Ganancias Totales</div>
+                                <div class="text-3xl font-bold mt-2">${formatCurrency(stats.totalEarnings)}</div>
+                            </div>
+                            <div class="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow-lg p-6 text-white">
+                                <div class="text-sm opacity-80">Entregas Hoy</div>
+                                <div class="text-3xl font-bold mt-2">${stats.completedToday}</div>
+                            </div>
+                            <div class="bg-gradient-to-br from-yellow-500 to-yellow-600 rounded-lg shadow-lg p-6 text-white">
+                                <div class="text-sm opacity-80">Ganancias Hoy</div>
+                                <div class="text-3xl font-bold mt-2">${formatCurrency(stats.earningsToday)}</div>
+                            </div>
+                        </div>
+                    ` : ''}
+
+                    <div class="grid md:grid-cols-2 gap-6">
+                        <!-- Pedidos activos -->
+                        <div class="bg-white rounded-xl shadow-lg p-6">
+                            <h2 class="text-2xl font-bold text-gray-800 mb-4">Pedidos Activos (${activeOrders.length})</h2>
+                            <div class="space-y-4">
+                                ${activeOrders.length === 0 ? `
+                                    <p class="text-gray-500 text-center py-8">No hay pedidos activos</p>
+                                ` : activeOrders.map(order => `
+                                    <div class="border-l-4 ${getStatusColor(order.status).replace('bg-', 'border-')} bg-gray-50 rounded-lg p-4">
+                                        <div class="flex justify-between items-start mb-3">
+                                            <div>
+                                                <div class="font-bold text-lg">Pedido #${order.orderNumber}</div>
+                                                <div class="text-sm text-gray-600">${order.customer.name}</div>
+                                            </div>
+                                            <span class="px-3 py-1 rounded text-xs text-white ${getStatusColor(order.status)}">
+                                                ${getStatusText(order.status)}
+                                            </span>
+                                        </div>
+                                        
+                                        <div class="space-y-2 text-sm mb-3">
+                                            <div class="flex justify-between">
+                                                <span class="text-gray-600">Dirección:</span>
+                                                <span class="font-semibold text-right ml-2">${order.deliveryAddress.address}</span>
+                                            </div>
+                                            <div class="flex justify-between">
+                                                <span class="text-gray-600">Distancia:</span>
+                                                <span class="font-semibold">${order.distance.toFixed(1)} km</span>
+                                            </div>
+                                            <div class="flex justify-between">
+                                                <span class="text-gray-600">Tu ganancia:</span>
+                                                <span class="font-bold text-green-600">${formatCurrency(order.driverEarnings)}</span>
+                                            </div>
+                                            <div class="flex justify-between">
+                                                <span class="text-gray-600">Total pedido:</span>
+                                                <span class="font-semibold">${formatCurrency(order.total)}</span>
+                                            </div>
+                                        </div>
+
+                                        ${order.items ? `
+                                            <div class="bg-white rounded p-2 mb-3">
+                                                <div class="text-xs font-semibold text-gray-700 mb-1">Items:</div>
+                                                ${order.items.map(item => `
+                                                    <div class="text-sm text-gray-600">${item.quantity}x ${item.name}</div>
+                                                `).join('')}
+                                            </div>
+                                        ` : ''}
+
+                                        ${order.notes ? `
+                                            <div class="bg-yellow-50 rounded p-2 mb-3 text-sm">
+                                                <strong>Notas:</strong> ${order.notes}
+                                            </div>
+                                        ` : ''}
+
+                                        ${order.status !== 'delivered' && order.status !== 'cancelled' ? `
+                                            <button 
+                                                onclick="updateOrderStatus('${order.id}', '${getNextStatus(order.status)}')"
+                                                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 rounded-lg transition"
+                                            >
+                                                ${getNextStatusText(order.status)}
+                                            </button>
+                                        ` : ''}
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+
+                        <!-- Historial -->
+                        <div class="bg-white rounded-xl shadow-lg p-6">
+                            <h2 class="text-2xl font-bold text-gray-800 mb-4">Historial (${completedOrders.length})</h2>
+                            <div class="space-y-3 max-h-[600px] overflow-y-auto">
+                                ${completedOrders.length === 0 ? `
+                                    <p class="text-gray-500 text-center py-8">No hay entregas completadas</p>
+                                ` : completedOrders.map(order => `
+                                    <div class="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                                        <div class="flex justify-between items-start mb-2">
+                                            <div>
+                                                <div class="font-semibold">Pedido #${order.orderNumber}</div>
+                                                <div class="text-sm text-gray-600">${order.customer.name}</div>
+                                            </div>
+                                            <span class="px-2 py-1 rounded text-xs text-white ${getStatusColor(order.status)}">
+                                                ${getStatusText(order.status)}
+                                            </span>
+                                        </div>
+                                        <div class="flex justify-between text-sm">
+                                            <span class="text-gray-600">Ganaste:</span>
+                                            <span class="font-bold text-green-600">${formatCurrency(order.driverEarnings)}</span>
+                                        </div>
+                                        <div class="text-xs text-gray-500 mt-1">
+                                            ${new Date(order.createdAt).toLocaleString('es-MX')}
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Inicializar
+        apiCall('/users/profile')
+            .then(data => {
+                user = data.user;
+                if (user.role !== 'driver') {
+                    alert('Acceso no autorizado');
+                    window.location.href = '/';
+                    return;
+                }
+                
+                // Conectar WebSocket
+                socket = io(SOCKET_URL);
+                socket.emit('subscribe', { userId: user.id, role: user.role });
+                socket.on(`driver:${user.id}`, (data) => {
+                    if (data.type === 'new_order') {
+                        alert('¡Nuevo pedido asignado!');
+                        loadOrders();
+                    }
+                });
+                
+                loadOrders();
+                loadStats();
+            })
+            .catch(() => {
+                localStorage.removeItem('token');
+                window.location.href = '/';
+            });
+    </script>
+</body>
+</html>

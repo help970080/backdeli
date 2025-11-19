@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel Admin - Delivery</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div id="root"></div>
+
+    <script>
+        const API_URL = '/api';
+        let user = null;
+        let token = localStorage.getItem('token');
+        let stats = null;
+
+        if (!token) {
+            window.location.href = '/';
+        }
+
+        async function apiCall(endpoint, method = 'GET', body = null) {
+            const options = {
+                method,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                ...(body && { body: JSON.stringify(body) })
+            };
+
+            try {
+                const response = await fetch(`${API_URL}${endpoint}`, options);
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'Error en la solicitud');
+                }
+                
+                return data;
+            } catch (error) {
+                alert(error.message);
+                throw error;
+            }
+        }
+
+        async function loadStats() {
+            try {
+                const data = await apiCall('/admin/stats');
+                stats = data.stats;
+                render();
+            } catch (error) {
+                console.error('Error cargando estadísticas:', error);
+            }
+        }
+
+        function handleLogout() {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            window.location.href = '/';
+        }
+
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('es-MX', {
+                style: 'currency',
+                currency: 'MXN'
+            }).format(amount || 0);
+        }
+
+        function render() {
+            const root = document.getElementById('root');
+
+            if (!stats) {
+                root.innerHTML = `
+                    <div class="min-h-screen flex items-center justify-center">
+                        <div class="text-center">
+                            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+                            <p class="mt-4 text-gray-600">Cargando estadísticas...</p>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+
+            root.innerHTML = `
+                <div class="container mx-auto px-4 py-6">
+                    <!-- Header -->
+                    <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+                        <div class="flex justify-between items-center">
+                            <div class="flex items-center gap-3">
+                                <div class="text-4xl">💰</div>
+                                <div>
+                                    <h1 class="text-2xl font-bold text-gray-800">Panel Administrador</h1>
+                                    <p class="text-gray-600">Sistema de Ganancias</p>
+                                </div>
+                            </div>
+                            <button onclick="handleLogout()" class="bg-red-500 hover:bg-red-600 text-white px-6 py-2 rounded-lg transition">
+                                Cerrar Sesión
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Ganancias Principales -->
+                    <div class="grid md:grid-cols-3 gap-6 mb-6">
+                        <div class="bg-gradient-to-br from-green-500 to-green-600 rounded-lg shadow-lg p-6 text-white">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-green-100 text-sm">TUS GANANCIAS TOTALES</p>
+                                    <p class="text-4xl font-bold mt-2">${formatCurrency(stats.totalPlatformEarnings)}</p>
+                                    <p class="text-green-100 text-xs mt-2">De ${stats.completedOrders} pedidos</p>
+                                </div>
+                                <div class="text-6xl opacity-20">💵</div>
+                            </div>
+                        </div>
+
+                        <div class="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg p-6 text-white">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-blue-100 text-sm">COMISIONES</p>
+                                    <p class="text-3xl font-bold mt-2">${formatCurrency(stats.totalCommissions)}</p>
+                                    <p class="text-blue-100 text-xs mt-2">20% del envío</p>
+                                </div>
+                                <div class="text-5xl opacity-20">📊</div>
+                            </div>
+                        </div>
+
+                        <div class="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow-lg p-6 text-white">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-purple-100 text-sm">FEES DE SERVICIO</p>
+                                    <p class="text-3xl font-bold mt-2">${formatCurrency(stats.totalServiceFees)}</p>
+                                    <p class="text-purple-100 text-xs mt-2">$10 por pedido</p>
+                                </div>
+                                <div class="text-5xl opacity-20">💳</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Ganancias de Hoy -->
+                    <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-4">📅 Hoy (${stats.today})</h2>
+                        <div class="grid md:grid-cols-2 gap-4">
+                            <div class="bg-green-50 border-l-4 border-green-500 p-4 rounded">
+                                <p class="text-green-700 font-semibold">Ganancia del Día</p>
+                                <p class="text-3xl font-bold text-green-600 mt-2">${formatCurrency(stats.earningsToday)}</p>
+                            </div>
+                            <div class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded">
+                                <p class="text-blue-700 font-semibold">Pedidos del Día</p>
+                                <p class="text-3xl font-bold text-blue-600 mt-2">${stats.ordersToday}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Desglose del Sistema -->
+                    <div class="grid md:grid-cols-2 gap-6 mb-6">
+                        <!-- Resumen de Pedidos -->
+                        <div class="bg-white rounded-lg shadow-md p-6">
+                            <h3 class="text-xl font-bold text-gray-800 mb-4">📦 Pedidos</h3>
+                            <div class="space-y-3">
+                                <div class="flex justify-between items-center p-3 bg-gray-50 rounded">
+                                    <span class="text-gray-700">Total de Pedidos</span>
+                                    <span class="font-bold text-gray-900">${stats.totalOrders}</span>
+                                </div>
+                                <div class="flex justify-between items-center p-3 bg-green-50 rounded">
+                                    <span class="text-green-700">Completados</span>
+                                    <span class="font-bold text-green-700">${stats.completedOrders}</span>
+                                </div>
+                                <div class="flex justify-between items-center p-3 bg-yellow-50 rounded">
+                                    <span class="text-yellow-700">Activos</span>
+                                    <span class="font-bold text-yellow-700">${stats.activeOrders}</span>
+                                </div>
+                                <div class="flex justify-between items-center p-3 bg-blue-50 rounded">
+                                    <span class="text-blue-700">Pendientes</span>
+                                    <span class="font-bold text-blue-700">${stats.pendingOrders}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Resumen Financiero -->
+                        <div class="bg-white rounded-lg shadow-md p-6">
+                            <h3 class="text-xl font-bold text-gray-800 mb-4">💼 Resumen Financiero</h3>
+                            <div class="space-y-3">
+                                <div class="flex justify-between items-center p-3 bg-gray-50 rounded">
+                                    <span class="text-gray-700">Ingresos Totales</span>
+                                    <span class="font-bold text-gray-900">${formatCurrency(stats.totalRevenue)}</span>
+                                </div>
+                                <div class="flex justify-between items-center p-3 bg-green-50 rounded border-2 border-green-200">
+                                    <span class="text-green-700 font-semibold">💰 Tus Ganancias</span>
+                                    <span class="font-bold text-green-700 text-lg">${formatCurrency(stats.totalPlatformEarnings)}</span>
+                                </div>
+                                <div class="flex justify-between items-center p-3 bg-blue-50 rounded">
+                                    <span class="text-blue-700">Pagos a Conductores</span>
+                                    <span class="font-bold text-blue-700">${formatCurrency(stats.totalDriverEarnings)}</span>
+                                </div>
+                                <div class="flex justify-between items-center p-3 bg-purple-50 rounded">
+                                    <span class="text-purple-700">Promedio por Pedido</span>
+                                    <span class="font-bold text-purple-700">${formatCurrency(stats.averagePlatformEarningPerOrder)}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Info de Conductores y Clientes -->
+                    <div class="bg-white rounded-lg shadow-md p-6">
+                        <h3 class="text-xl font-bold text-gray-800 mb-4">👥 Usuarios</h3>
+                        <div class="grid md:grid-cols-3 gap-4">
+                            <div class="text-center p-4 bg-gray-50 rounded">
+                                <p class="text-gray-600">Conductores</p>
+                                <p class="text-3xl font-bold text-gray-800">${stats.totalDrivers}</p>
+                            </div>
+                            <div class="text-center p-4 bg-green-50 rounded">
+                                <p class="text-green-600">Disponibles</p>
+                                <p class="text-3xl font-bold text-green-700">${stats.availableDrivers}</p>
+                            </div>
+                            <div class="text-center p-4 bg-blue-50 rounded">
+                                <p class="text-blue-600">Clientes</p>
+                                <p class="text-3xl font-bold text-blue-700">${stats.totalClients}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Botón de Refrescar -->
+                    <div class="text-center mt-6">
+                        <button onclick="loadStats()" class="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-semibold transition">
+                            🔄 Actualizar Estadísticas
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Inicializar
+        apiCall('/users/profile')
+            .then(data => {
+                user = data.user;
+                if (user.role !== 'admin') {
+                    alert('Acceso no autorizado');
+                    window.location.href = '/';
+                    return;
+                }
+                loadStats();
+            })
+            .catch(() => {
+                localStorage.removeItem('token');
+                window.location.href = '/';
+            });
+    </script>
+</body>
+</html>

@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel Cliente - Delivery</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+</head>
+<body class="bg-gradient-to-br from-blue-100 via-purple-100 to-pink-100 min-h-screen">
+    <div id="root"></div>
+
+    <script>
+        const API_URL = '/api';
+        const SOCKET_URL = window.location.origin;
+        
+        let user = null;
+        let token = localStorage.getItem('token');
+        let socket = null;
+        let myOrders = [];
+
+        // Verificar autenticación
+        if (!token) {
+            window.location.href = '/';
+        }
+
+        async function apiCall(endpoint, method = 'GET', body = null) {
+            const options = {
+                method,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                ...(body && { body: JSON.stringify(body) })
+            };
+
+            try {
+                const response = await fetch(`${API_URL}${endpoint}`, options);
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'Error en la solicitud');
+                }
+                
+                return data;
+            } catch (error) {
+                alert(error.message);
+                throw error;
+            }
+        }
+
+        async function createOrder(event) {
+            event.preventDefault();
+            const form = event.target;
+            
+            const orderData = {
+                items: [
+                    {
+                        name: form.itemName.value,
+                        quantity: parseInt(form.itemQuantity.value),
+                        price: parseFloat(form.itemPrice.value)
+                    }
+                ],
+                deliveryAddress: {
+                    lat: 19.4326,
+                    lng: -99.1332,
+                    address: form.address.value,
+                    contactName: user.name,
+                    contactPhone: user.phone
+                },
+                paymentMethod: form.paymentMethod.value,
+                notes: form.notes.value
+            };
+
+            try {
+                const data = await apiCall('/orders', 'POST', orderData);
+                alert('¡Pedido creado exitosamente!');
+                form.reset();
+                loadOrders();
+            } catch (error) {
+                console.error('Error creando pedido:', error);
+            }
+        }
+
+        async function loadOrders() {
+            try {
+                const data = await apiCall('/orders');
+                myOrders = data.orders;
+                render();
+            } catch (error) {
+                console.error('Error cargando pedidos:', error);
+            }
+        }
+
+        function handleLogout() {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            window.location.href = '/';
+        }
+
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('es-MX', {
+                style: 'currency',
+                currency: 'MXN'
+            }).format(amount);
+        }
+
+        function getStatusColor(status) {
+            const colors = {
+                'pending': 'bg-yellow-500',
+                'accepted': 'bg-blue-500',
+                'preparing': 'bg-indigo-500',
+                'on_way': 'bg-purple-500',
+                'delivered': 'bg-green-500',
+                'cancelled': 'bg-red-500'
+            };
+            return colors[status] || 'bg-gray-500';
+        }
+
+        function getStatusText(status) {
+            const texts = {
+                'pending': 'Pendiente',
+                'accepted': 'Aceptado',
+                'preparing': 'Preparando',
+                'on_way': 'En camino',
+                'delivered': 'Entregado',
+                'cancelled': 'Cancelado'
+            };
+            return texts[status] || status;
+        }
+
+        function render() {
+            const root = document.getElementById('root');
+            const activeOrders = myOrders.filter(o => !['delivered', 'cancelled'].includes(o.status));
+            const completedOrders = myOrders.filter(o => ['delivered', 'cancelled'].includes(o.status));
+
+            root.innerHTML = `
+                <div class="container mx-auto px-4 py-6">
+                    <!-- Header -->
+                    <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+                        <div class="flex justify-between items-center">
+                            <div class="flex items-center gap-3">
+                                <div class="text-4xl">🛒</div>
+                                <div>
+                                    <h1 class="text-2xl font-bold text-gray-800">Panel Cliente</h1>
+                                    <p class="text-gray-600">${user.name}</p>
+                                </div>
+                            </div>
+                            <button onclick="handleLogout()" class="bg-red-500 hover:bg-red-600 text-white px-6 py-2 rounded-lg transition">
+                                Cerrar Sesión
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="grid md:grid-cols-2 gap-6">
+                        <!-- Formulario de pedido -->
+                        <div class="bg-white rounded-xl shadow-lg p-6">
+                            <h2 class="text-2xl font-bold text-gray-800 mb-4">Hacer Pedido</h2>
+                            
+                            <form onsubmit="createOrder(event)" class="space-y-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Producto</label>
+                                    <input 
+                                        type="text" 
+                                        name="itemName"
+                                        placeholder="Ej: Torta de jamón"
+                                        class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                                        required
+                                    />
+                                </div>
+
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-2">Cantidad</label>
+                                        <input 
+                                            type="number" 
+                                            name="itemQuantity"
+                                            value="1"
+                                            min="1"
+                                            class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                                            required
+                                        />
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-2">Precio</label>
+                                        <input 
+                                            type="number" 
+                                            name="itemPrice"
+                                            value="45"
+                                            min="0"
+                                            step="0.01"
+                                            class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                                            required
+                                        />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Dirección</label>
+                                    <input 
+                                        type="text" 
+                                        name="address"
+                                        placeholder="Calle, número, colonia"
+                                        value="Av. Reforma 123, CDMX"
+                                        class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                                        required
+                                    />
+                                </div>
+
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Método de pago</label>
+                                    <select name="paymentMethod" class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                                        <option value="cash">Efectivo</option>
+                                        <option value="card">Tarjeta</option>
+                                        <option value="wallet">Monedero digital</option>
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Notas (opcional)</label>
+                                    <textarea 
+                                        name="notes"
+                                        placeholder="Instrucciones especiales..."
+                                        class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                                        rows="2"
+                                    ></textarea>
+                                </div>
+
+                                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition">
+                                    Crear Pedido
+                                </button>
+                            </form>
+                        </div>
+
+                        <!-- Pedidos -->
+                        <div class="space-y-6">
+                            <!-- Pedidos activos -->
+                            ${activeOrders.length > 0 ? `
+                                <div class="bg-white rounded-xl shadow-lg p-6">
+                                    <h3 class="text-xl font-bold text-gray-800 mb-4">Pedidos Activos</h3>
+                                    <div class="space-y-3">
+                                        ${activeOrders.map(order => `
+                                            <div class="bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg p-4 border border-blue-200">
+                                                <div class="flex justify-between items-start mb-2">
+                                                    <span class="font-semibold">Pedido #${order.orderNumber}</span>
+                                                    <span class="px-3 py-1 rounded text-xs text-white ${getStatusColor(order.status)}">
+                                                        ${getStatusText(order.status)}
+                                                    </span>
+                                                </div>
+                                                ${order.driver ? `
+                                                    <div class="bg-white rounded p-2 mb-2 text-sm">
+                                                        <p><strong>Conductor:</strong> ${order.driver.name}</p>
+                                                        <p class="text-xs text-gray-600">${order.driver.vehicle}</p>
+                                                    </div>
+                                                ` : ''}
+                                                <p class="text-sm"><strong>Total:</strong> ${formatCurrency(order.total)}</p>
+                                                <p class="text-xs text-gray-500 mt-1">${new Date(order.createdAt).toLocaleString('es-MX')}</p>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            ` : ''}
+
+                            <!-- Historial -->
+                            <div class="bg-white rounded-xl shadow-lg p-6">
+                                <h3 class="text-xl font-bold text-gray-800 mb-4">Historial</h3>
+                                <div class="space-y-3">
+                                    ${completedOrders.length === 0 ? `
+                                        <p class="text-gray-500 text-center py-4">No hay pedidos completados aún</p>
+                                    ` : completedOrders.map(order => `
+                                        <div class="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                                            <div class="flex justify-between items-start mb-2">
+                                                <span class="font-semibold">Pedido #${order.orderNumber}</span>
+                                                <span class="px-3 py-1 rounded text-xs text-white ${getStatusColor(order.status)}">
+                                                    ${getStatusText(order.status)}
+                                                </span>
+                                            </div>
+                                            <p class="text-sm text-gray-600">Total: ${formatCurrency(order.total)}</p>
+                                            <p class="text-xs text-gray-500 mt-1">${new Date(order.createdAt).toLocaleString('es-MX')}</p>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Inicializar
+        apiCall('/users/profile')
+            .then(data => {
+                user = data.user;
+                if (user.role !== 'client') {
+                    alert('Acceso no autorizado');
+                    window.location.href = '/';
+                    return;
+                }
+                
+                // Conectar WebSocket
+                socket = io(SOCKET_URL);
+                socket.emit('subscribe', { userId: user.id, role: user.role });
+                socket.on(`client:${user.id}`, (data) => {
+                    if (data.type === 'order_update') {
+                        alert('¡Tu pedido se actualizó!');
+                        loadOrders();
+                    }
+                });
+                
+                loadOrders();
+            })
+            .catch(() => {
+                localStorage.removeItem('token');
+                window.location.href = '/';
+            });
+    </script>
+</body>
+</html>
