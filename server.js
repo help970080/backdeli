@@ -48,6 +48,7 @@ let database = {
       vehicle: 'Moto Honda 2020',
       license: 'ABC123456',
       available: true,
+      approved: true,
       currentLocation: { lat: 19.4326, lng: -99.1332 },
       rating: 4.8,
       totalDeliveries: 150,
@@ -65,7 +66,8 @@ let database = {
     }
   ],
   orders: [],
-  orderCounter: 1
+  orderCounter: 1,
+  userCounter: 4
 };
 
 // Utilidades
@@ -134,6 +136,10 @@ app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
+app.get('/register', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'register.html'));
+});
+
 // ============================================
 // RUTAS DE AUTENTICACIÓN
 // ============================================
@@ -151,6 +157,11 @@ app.post('/api/auth/login', (req, res) => {
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
 
+    // Verificar si es conductor pendiente
+    if (user.role === 'driver' && user.approved === false) {
+      return res.status(403).json({ error: 'Tu cuenta está pendiente de aprobación' });
+    }
+
     const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET);
     const { password: _, ...userWithoutPassword } = user;
 
@@ -161,6 +172,79 @@ app.post('/api/auth/login', (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: 'Error al iniciar sesión', details: error.message });
+  }
+});
+
+app.post('/api/auth/register', (req, res) => {
+  try {
+    const { email, password, name, phone, role, address, vehicle, license } = req.body;
+
+    // Validaciones básicas
+    if (!email || !password || !name || !phone || !role) {
+      return res.status(400).json({ error: 'Faltan campos requeridos' });
+    }
+
+    // Verificar si el email ya existe
+    if (database.users.find(u => u.email === email)) {
+      return res.status(409).json({ error: 'El email ya está registrado' });
+    }
+
+    // Solo permitir registro de clientes y conductores
+    if (!['client', 'driver'].includes(role)) {
+      return res.status(400).json({ error: 'Rol inválido' });
+    }
+
+    // Validaciones específicas para conductores
+    if (role === 'driver' && (!vehicle || !license)) {
+      return res.status(400).json({ error: 'Conductores deben proporcionar vehículo y licencia' });
+    }
+
+    const newUser = {
+      id: database.userCounter++,
+      email,
+      password,
+      name,
+      phone,
+      role,
+      createdAt: new Date()
+    };
+
+    if (role === 'client') {
+      newUser.address = address || '';
+    }
+
+    if (role === 'driver') {
+      newUser.vehicle = vehicle;
+      newUser.license = license;
+      newUser.available = false;
+      newUser.approved = false; // Requiere aprobación
+      newUser.currentLocation = { lat: 19.4326, lng: -99.1332 };
+      newUser.rating = 5.0;
+      newUser.totalDeliveries = 0;
+      newUser.totalEarnings = 0;
+    }
+
+    database.users.push(newUser);
+
+    // Si es cliente, auto-login
+    if (role === 'client') {
+      const token = jwt.sign({ id: newUser.id, email: newUser.email, role: newUser.role }, JWT_SECRET);
+      const { password: _, ...userWithoutPassword } = newUser;
+      
+      return res.status(201).json({
+        message: 'Registro exitoso',
+        token,
+        user: userWithoutPassword
+      });
+    }
+
+    // Si es conductor, no dar token (debe esperar aprobación)
+    res.status(201).json({
+      message: 'Registro exitoso. Tu cuenta será revisada y aprobada pronto.',
+      pendingApproval: true
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al registrar usuario', details: error.message });
   }
 });
 
@@ -184,6 +268,7 @@ app.post('/api/orders', authenticateToken, (req, res) => {
     const availableDrivers = database.users.filter(u => 
       u.role === 'driver' && 
       u.available && 
+      u.approved &&
       u.currentLocation
     );
 
@@ -419,8 +504,9 @@ app.get('/api/admin/stats', authenticateToken, (req, res) => {
       totalServiceFees: completedOrders.reduce((sum, o) => sum + (o.serviceFee || 0), 0),
       totalDriverEarnings: completedOrders.reduce((sum, o) => sum + (o.driverEarnings || 0), 0),
       totalRevenue: completedOrders.reduce((sum, o) => sum + o.total, 0),
-      totalDrivers: database.users.filter(u => u.role === 'driver').length,
-      availableDrivers: database.users.filter(u => u.role === 'driver' && u.available).length,
+      totalDrivers: database.users.filter(u => u.role === 'driver' && u.approved).length,
+      pendingDrivers: database.users.filter(u => u.role === 'driver' && !u.approved).length,
+      availableDrivers: database.users.filter(u => u.role === 'driver' && u.available && u.approved).length,
       totalClients: database.users.filter(u => u.role === 'client').length,
       today: today,
       ordersToday: allOrders.filter(o => new Date(o.createdAt).toDateString() === today).length,
@@ -438,6 +524,68 @@ app.get('/api/admin/stats', authenticateToken, (req, res) => {
     res.json({ stats });
   } catch (error) {
     res.status(500).json({ error: 'Error al obtener estadísticas', details: error.message });
+  }
+});
+
+app.get('/api/admin/drivers/pending', authenticateToken, (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    const pendingDrivers = database.users
+      .filter(u => u.role === 'driver' && u.approved === false)
+      .map(({ password, ...driver }) => driver);
+
+    res.json({ drivers: pendingDrivers });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener conductores pendientes', details: error.message });
+  }
+});
+
+app.put('/api/admin/drivers/:driverId/approve', authenticateToken, (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    const { driverId } = req.params;
+    const driver = database.users.find(u => u.id === parseInt(driverId) && u.role === 'driver');
+
+    if (!driver) {
+      return res.status(404).json({ error: 'Conductor no encontrado' });
+    }
+
+    driver.approved = true;
+    driver.available = true;
+
+    res.json({
+      message: 'Conductor aprobado exitosamente',
+      driver: { id: driver.id, name: driver.name, email: driver.email, approved: true }
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al aprobar conductor', details: error.message });
+  }
+});
+
+app.delete('/api/admin/drivers/:driverId/reject', authenticateToken, (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    const { driverId } = req.params;
+    const driverIndex = database.users.findIndex(u => u.id === parseInt(driverId) && u.role === 'driver');
+
+    if (driverIndex === -1) {
+      return res.status(404).json({ error: 'Conductor no encontrado' });
+    }
+
+    database.users.splice(driverIndex, 1);
+
+    res.json({ message: 'Conductor rechazado y eliminado' });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al rechazar conductor', details: error.message });
   }
 });
 
