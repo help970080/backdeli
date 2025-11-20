@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Registro - Sistema Delivery</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 min-h-screen flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-2xl">
+        <div class="text-center mb-6">
+            <div class="text-6xl mb-4">📝</div>
+            <h1 class="text-3xl font-bold text-gray-800">Crear Cuenta</h1>
+            <p class="text-gray-600 mt-2">Únete a nuestro sistema de delivery</p>
+        </div>
+        
+        <!-- Selector de tipo de cuenta -->
+        <div class="flex gap-4 mb-6">
+            <button 
+                id="clientBtn"
+                class="flex-1 py-3 rounded-lg font-semibold transition bg-blue-600 text-white"
+                onclick="selectRole('client')"
+            >
+                👤 Soy Cliente
+            </button>
+            <button 
+                id="driverBtn"
+                class="flex-1 py-3 rounded-lg font-semibold transition bg-gray-200 text-gray-700 hover:bg-gray-300"
+                onclick="selectRole('driver')"
+            >
+                🚗 Soy Conductor
+            </button>
+        </div>
+
+        <form id="registerForm" class="space-y-4">
+            <input type="hidden" id="role" value="client">
+
+            <!-- Campos comunes -->
+            <div class="grid md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Nombre completo *</label>
+                    <input 
+                        type="text" 
+                        id="name"
+                        class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                        required
+                        placeholder="Juan Pérez"
+                    />
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Teléfono *</label>
+                    <input 
+                        type="tel" 
+                        id="phone"
+                        class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                        required
+                        placeholder="5512345678"
+                    />
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Email *</label>
+                <input 
+                    type="email" 
+                    id="email"
+                    class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    required
+                    placeholder="tu@email.com"
+                />
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Contraseña *</label>
+                <input 
+                    type="password" 
+                    id="password"
+                    class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    required
+                    placeholder="Mínimo 6 caracteres"
+                    minlength="6"
+                />
+            </div>
+
+            <!-- Campos específicos de cliente -->
+            <div id="clientFields" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Dirección</label>
+                    <input 
+                        type="text" 
+                        id="address"
+                        class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                        placeholder="Calle, número, colonia"
+                    />
+                </div>
+            </div>
+
+            <!-- Campos específicos de conductor -->
+            <div id="driverFields" class="hidden space-y-4">
+                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                    <p class="text-sm text-yellow-800">
+                        ⚠️ Tu cuenta será revisada antes de ser aprobada. Te notificaremos cuando puedas empezar a trabajar.
+                    </p>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Vehículo *</label>
+                    <input 
+                        type="text" 
+                        id="vehicle"
+                        class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                        placeholder="Ej: Moto Honda 2020"
+                    />
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Número de Licencia *</label>
+                    <input 
+                        type="text" 
+                        id="license"
+                        class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                        placeholder="ABC123456"
+                    />
+                </div>
+            </div>
+
+            <button 
+                type="submit" 
+                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition"
+            >
+                Registrarse
+            </button>
+        </form>
+
+        <div id="success" class="mt-4 hidden p-4 bg-green-100 text-green-700 rounded-lg"></div>
+        <div id="error" class="mt-4 hidden p-4 bg-red-100 text-red-700 rounded-lg"></div>
+
+        <div class="mt-6 text-center">
+            <p class="text-gray-600 text-sm">¿Ya tienes cuenta?</p>
+            <a href="/" class="text-blue-600 hover:text-blue-700 font-semibold">
+                Iniciar sesión
+            </a>
+        </div>
+    </div>
+
+    <script>
+        let currentRole = 'client';
+
+        function selectRole(role) {
+            currentRole = role;
+            document.getElementById('role').value = role;
+
+            const clientBtn = document.getElementById('clientBtn');
+            const driverBtn = document.getElementById('driverBtn');
+            const clientFields = document.getElementById('clientFields');
+            const driverFields = document.getElementById('driverFields');
+
+            if (role === 'client') {
+                clientBtn.className = 'flex-1 py-3 rounded-lg font-semibold transition bg-blue-600 text-white';
+                driverBtn.className = 'flex-1 py-3 rounded-lg font-semibold transition bg-gray-200 text-gray-700 hover:bg-gray-300';
+                clientFields.classList.remove('hidden');
+                driverFields.classList.add('hidden');
+                
+                // Remover required de campos de conductor
+                document.getElementById('vehicle').removeAttribute('required');
+                document.getElementById('license').removeAttribute('required');
+            } else {
+                driverBtn.className = 'flex-1 py-3 rounded-lg font-semibold transition bg-blue-600 text-white';
+                clientBtn.className = 'flex-1 py-3 rounded-lg font-semibold transition bg-gray-200 text-gray-700 hover:bg-gray-300';
+                clientFields.classList.add('hidden');
+                driverFields.classList.remove('hidden');
+                
+                // Agregar required a campos de conductor
+                document.getElementById('vehicle').setAttribute('required', 'required');
+                document.getElementById('license').setAttribute('required', 'required');
+            }
+        }
+
+        document.getElementById('registerForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const errorDiv = document.getElementById('error');
+            const successDiv = document.getElementById('success');
+            errorDiv.classList.add('hidden');
+            successDiv.classList.add('hidden');
+
+            const formData = {
+                name: document.getElementById('name').value,
+                phone: document.getElementById('phone').value,
+                email: document.getElementById('email').value,
+                password: document.getElementById('password').value,
+                role: currentRole
+            };
+
+            if (currentRole === 'client') {
+                formData.address = document.getElementById('address').value;
+            } else {
+                formData.vehicle = document.getElementById('vehicle').value;
+                formData.license = document.getElementById('license').value;
+            }
+
+            try {
+                const response = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(formData)
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Error al registrarse');
+                }
+
+                // Si es cliente, auto-login y redirigir
+                if (currentRole === 'client' && data.token) {
+                    localStorage.setItem('token', data.token);
+                    localStorage.setItem('user', JSON.stringify(data.user));
+                    window.location.href = '/cliente';
+                } else {
+                    // Si es conductor, mostrar mensaje de éxito
+                    successDiv.innerHTML = `
+                        <div class="font-semibold mb-2">✅ Registro exitoso</div>
+                        <p class="text-sm">${data.message}</p>
+                        <a href="/" class="inline-block mt-3 text-blue-600 hover:text-blue-700 font-semibold">
+                            Volver al login
+                        </a>
+                    `;
+                    successDiv.classList.remove('hidden');
+                    document.getElementById('registerForm').reset();
+                }
+            } catch (error) {
+                errorDiv.textContent = error.message;
+                errorDiv.classList.remove('hidden');
+            }
+        });
+    </script>
+</body>
+</html>

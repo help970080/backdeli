@@ -14,6 +14,7 @@
         let user = null;
         let token = localStorage.getItem('token');
         let stats = null;
+        let pendingDrivers = [];
 
         if (!token) {
             window.location.href = '/';
@@ -51,6 +52,42 @@
                 render();
             } catch (error) {
                 console.error('Error cargando estadísticas:', error);
+            }
+        }
+
+        async function loadPendingDrivers() {
+            try {
+                const data = await apiCall('/admin/drivers/pending');
+                pendingDrivers = data.drivers;
+                render();
+            } catch (error) {
+                console.error('Error cargando conductores pendientes:', error);
+            }
+        }
+
+        async function approveDriver(driverId) {
+            if (!confirm('¿Aprobar este conductor?')) return;
+            
+            try {
+                await apiCall(`/admin/drivers/${driverId}/approve`, 'PUT');
+                alert('Conductor aprobado exitosamente');
+                loadPendingDrivers();
+                loadStats();
+            } catch (error) {
+                console.error('Error aprobando conductor:', error);
+            }
+        }
+
+        async function rejectDriver(driverId) {
+            if (!confirm('¿Rechazar y eliminar este conductor?')) return;
+            
+            try {
+                await apiCall(`/admin/drivers/${driverId}/reject`, 'DELETE');
+                alert('Conductor rechazado');
+                loadPendingDrivers();
+                loadStats();
+            } catch (error) {
+                console.error('Error rechazando conductor:', error);
             }
         }
 
@@ -219,10 +256,55 @@
                         </div>
                     </div>
 
+                    <!-- Conductores Pendientes -->
+                    ${pendingDrivers.length > 0 ? `
+                        <div class="bg-white rounded-lg shadow-md p-6 mt-6">
+                            <div class="flex items-center gap-2 mb-4">
+                                <h3 class="text-xl font-bold text-gray-800">⏳ Conductores Pendientes de Aprobación</h3>
+                                <span class="bg-yellow-500 text-white px-3 py-1 rounded-full text-sm font-bold">${pendingDrivers.length}</span>
+                            </div>
+                            <div class="grid md:grid-cols-2 gap-4">
+                                ${pendingDrivers.map(driver => `
+                                    <div class="border border-yellow-200 bg-yellow-50 rounded-lg p-4">
+                                        <div class="flex justify-between items-start mb-3">
+                                            <div>
+                                                <div class="font-bold text-lg">${driver.name}</div>
+                                                <div class="text-sm text-gray-600">${driver.email}</div>
+                                                <div class="text-sm text-gray-600">${driver.phone}</div>
+                                            </div>
+                                            <div class="text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded">
+                                                Pendiente
+                                            </div>
+                                        </div>
+                                        <div class="space-y-1 mb-3 text-sm">
+                                            <div><strong>Vehículo:</strong> ${driver.vehicle}</div>
+                                            <div><strong>Licencia:</strong> ${driver.license}</div>
+                                            <div class="text-xs text-gray-500">Registrado: ${new Date(driver.createdAt).toLocaleDateString('es-MX')}</div>
+                                        </div>
+                                        <div class="flex gap-2">
+                                            <button 
+                                                onclick="approveDriver(${driver.id})"
+                                                class="flex-1 bg-green-600 hover:bg-green-700 text-white font-semibold py-2 rounded-lg transition"
+                                            >
+                                                ✓ Aprobar
+                                            </button>
+                                            <button 
+                                                onclick="rejectDriver(${driver.id})"
+                                                class="flex-1 bg-red-600 hover:bg-red-700 text-white font-semibold py-2 rounded-lg transition"
+                                            >
+                                                ✗ Rechazar
+                                            </button>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
+
                     <!-- Botón de Refrescar -->
                     <div class="text-center mt-6">
-                        <button onclick="loadStats()" class="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-semibold transition">
-                            🔄 Actualizar Estadísticas
+                        <button onclick="loadStats(); loadPendingDrivers();" class="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-semibold transition">
+                            🔄 Actualizar
                         </button>
                     </div>
                 </div>
@@ -239,6 +321,7 @@
                     return;
                 }
                 loadStats();
+                loadPendingDrivers();
             })
             .catch(() => {
                 localStorage.removeItem('token');
