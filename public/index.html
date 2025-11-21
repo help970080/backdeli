@@ -50,6 +50,7 @@
             <div class="space-y-1 text-gray-600">
                 <p>👤 <strong>Cliente:</strong> cliente@delivery.com / cliente123</p>
                 <p>🚗 <strong>Conductor:</strong> conductor@delivery.com / conductor123</p>
+                <p>🏪 <strong>Tienda:</strong> tienda@delivery.com / tienda123</p>
                 <p>⚙️ <strong>Admin:</strong> admin@delivery.com / admin123</p>
             </div>
         </div>
@@ -88,15 +89,19 @@
                     throw new Error(data.error || 'Error al iniciar sesión');
                 }
 
+                // Guardar token
                 localStorage.setItem('token', data.token);
                 localStorage.setItem('user', JSON.stringify(data.user));
 
+                // Redirigir según rol
                 if (data.user.role === 'client') {
                     window.location.href = '/cliente';
                 } else if (data.user.role === 'driver') {
                     window.location.href = '/conductor';
                 } else if (data.user.role === 'admin') {
                     window.location.href = '/admin';
+                } else if (data.user.role === 'store_owner') {
+                    window.location.href = '/tienda';
                 }
 
             } catch (error) {
@@ -107,3 +112,4 @@
     </script>
 </body>
 </html>
+<!-- v3.0 - Login con soporte para tienda -->
