@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel Tienda - Delivery</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div id="root"></div>
+
+    <script>
+        const API_URL = '/api';
+        let user = null;
+        let token = localStorage.getItem('token');
+        let myStores = [];
+        let myProducts = [];
+        let myOrders = [];
+        let stats = null;
+        let currentView = 'dashboard';
+        let selectedStore = null;
+
+        if (!token) {
+            window.location.href = '/';
+        }
+
+        async function apiCall(endpoint, method = 'GET', body = null) {
+            const options = {
+                method,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                ...(body && { body: JSON.stringify(body) })
+            };
+
+            try {
+                const response = await fetch(`${API_URL}${endpoint}`, options);
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'Error en la solicitud');
+                }
+                
+                return data;
+            } catch (error) {
+                alert(error.message);
+                throw error;
+            }
+        }
+
+        async function loadData() {
+            try {
+                const storesData = await apiCall('/stores');
+                myStores = storesData.stores.filter(s => s.ownerId === user.id);
+                
+                if (myStores.length > 0 && !selectedStore) {
+                    selectedStore = myStores[0];
+                }
+                
+                if (selectedStore) {
+                    const productsData = await apiCall(`/stores/${selectedStore.id}/products`);
+                    myProducts = productsData.products;
+                }
+                
+                const ordersData = await apiCall('/orders');
+                myOrders = ordersData.orders;
+                
+                const statsData = await apiCall('/stats');
+                stats = statsData.stats;
+                
+                render();
+            } catch (error) {
+                console.error('Error cargando datos:', error);
+            }
+        }
+
+        async function createProduct(event) {
+            event.preventDefault();
+            const form = event.target;
+            const formData = new FormData(form);
+            
+            const productData = {
+                storeId: selectedStore.id,
+                name: formData.get('name'),
+                description: formData.get('description'),
+                price: parseFloat(formData.get('price')),
+                category: formData.get('category')
+            };
+
+            try {
+                await apiCall('/products', 'POST', productData);
+                alert('Producto creado exitosamente');
+                form.reset();
+                loadData();
+            } catch (error) {
+                console.error('Error creando producto:', error);
+            }
+        }
+
+        async function toggleProductAvailability(productId, currentStatus) {
+            try {
+                await apiCall(`/products/${productId}`, 'PUT', {
+                    available: !currentStatus
+                });
+                loadData();
+            } catch (error) {
+                console.error('Error actualizando producto:', error);
+            }
+        }
+
+        async function deleteProduct(productId) {
+            if (!confirm('¿Eliminar este producto?')) return;
+            
+            try {
+                await apiCall(`/products/${productId}`, 'DELETE');
+                alert('Producto eliminado');
+                loadData();
+            } catch (error) {
+                console.error('Error eliminando producto:', error);
+            }
+        }
+
+        async function toggleStoreStatus() {
+            if (!selectedStore) return;
+            
+            try {
+                await apiCall(`/stores/${selectedStore.id}`, 'PUT', {
+                    isOpen: !selectedStore.isOpen
+                });
+                alert(`Tienda ${selectedStore.isOpen ? 'cerrada' : 'abierta'}`);
+                loadData();
+            } catch (error) {
+                console.error('Error actualizando tienda:', error);
+            }
+        }
+
+        function handleLogout() {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            window.location.href = '/';
+        }
+
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('es-MX', {
+                style: 'currency',
+                currency: 'MXN'
+            }).format(amount || 0);
+        }
+
+        function getStatusColor(status) {
+            const colors = {
+                'pending': 'bg-yellow-500',
+                'accepted': 'bg-blue-500',
+                'preparing': 'bg-indigo-500',
+                'on_way': 'bg-purple-500',
+                'delivered': 'bg-green-500',
+                'cancelled': 'bg-red-500'
+            };
+            return colors[status] || 'bg-gray-500';
+        }
+
+        function getStatusText(status) {
+            const texts = {
+                'pending': 'Pendiente',
+                'accepted': 'Aceptado',
+                'preparing': 'Preparando',
+                'on_way': 'En camino',
+                'delivered': 'Entregado',
+                'cancelled': 'Cancelado'
+            };
+            return texts[status] || status;
+        }
+
+        function render() {
+            const root = document.getElementById('root');
+            
+            root.innerHTML = `
+                <div class="container mx-auto px-4 py-6">
+                    <!-- Header -->
+                    <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+                        <div class="flex justify-between items-center">
+                            <div class="flex items-center gap-3">
+                                <div class="text-4xl">🏪</div>
+                                <div>
+                                    <h1 class="text-2xl font-bold text-gray-800">Panel Tienda</h1>
+                                    <p class="text-gray-600">${user.name}</p>
+                                </div>
+                            </div>
+                            
+                            <div class="flex items-center gap-3">
+                                ${selectedStore ? `
+                                    <button 
+                                        onclick="toggleStoreStatus()"
+                                        class="px-6 py-2 rounded-lg font-semibold transition ${selectedStore.isOpen ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-gray-400 hover:bg-gray-500 text-white'}"
+                                    >
+                                        ${selectedStore.isOpen ? '✓ Abierta' : '✗ Cerrada'}
+                                    </button>
+                                ` : ''}
+                                
+                                <button onclick="handleLogout()" class="bg-red-500 hover:bg-red-600 text-white px-6 py-2 rounded-lg transition">
+                                    Cerrar Sesión
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Navegación -->
+                        <div class="flex gap-2 mt-4">
+                            <button 
+                                onclick="currentView = 'dashboard'; render();"
+                                class="px-4 py-2 rounded-lg font-semibold transition ${currentView === 'dashboard' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}"
+                            >
+                                📊 Dashboard
+                            </button>
+                            <button 
+                                onclick="currentView = 'products'; render();"
+                                class="px-4 py-2 rounded-lg font-semibold transition ${currentView === 'products' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}"
+                            >
+                                🍕 Productos
+                            </button>
+                            <button 
+                                onclick="currentView = 'orders'; render();"
+                                class="px-4 py-2 rounded-lg font-semibold transition ${currentView === 'orders' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}"
+                            >
+                                📦 Pedidos
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Contenido -->
+                    ${currentView === 'dashboard' ? renderDashboard() : ''}
+                    ${currentView === 'products' ? renderProducts() : ''}
+                    ${currentView === 'orders' ? renderOrders() : ''}
+                </div>
+            `;
+        }
+
+        function renderDashboard() {
+            if (!stats) return '<div class="text-center py-12">Cargando estadísticas...</div>';
+            
+            return `
+                <div class="grid md:grid-cols-4 gap-6 mb-6">
+                    <div class="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg p-6 text-white">
+                        <div class="text-sm opacity-80">Tiendas</div>
+                        <div class="text-3xl font-bold mt-2">${stats.totalStores}</div>
+                    </div>
+                    <div class="bg-gradient-to-br from-green-500 to-green-600 rounded-lg shadow-lg p-6 text-white">
+                        <div class="text-sm opacity-80">Ingresos Totales</div>
+                        <div class="text-3xl font-bold mt-2">${formatCurrency(stats.totalRevenue)}</div>
+                    </div>
+                    <div class="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow-lg p-6 text-white">
+                        <div class="text-sm opacity-80">Pedidos Totales</div>
+                        <div class="text-3xl font-bold mt-2">${stats.totalOrders}</div>
+                    </div>
+                    <div class="bg-gradient-to-br from-yellow-500 to-yellow-600 rounded-lg shadow-lg p-6 text-white">
+                        <div class="text-sm opacity-80">Pedidos Hoy</div>
+                        <div class="text-3xl font-bold mt-2">${stats.ordersToday}</div>
+                    </div>
+                </div>
+
+                <div class="grid md:grid-cols-2 gap-6">
+                    <!-- Mis tiendas -->
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <h3 class="text-xl font-bold text-gray-800 mb-4">🏪 Mis Tiendas</h3>
+                        <div class="space-y-3">
+                            ${myStores.map(store => `
+                                <div class="border rounded-lg p-4 ${store.id === selectedStore?.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}">
+                                    <div class="flex justify-between items-start mb-2">
+                                        <div>
+                                            <div class="font-bold text-gray-800">${store.name}</div>
+                                            <div class="text-sm text-gray-600">${store.category}</div>
+                                        </div>
+                                        <span class="px-2 py-1 rounded text-xs ${store.isOpen ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">
+                                            ${store.isOpen ? 'Abierta' : 'Cerrada'}
+                                        </span>
+                                    </div>
+                                    <div class="flex gap-4 text-sm text-gray-600">
+                                        <span>⭐ ${store.rating}</span>
+                                        <span>🕐 ${store.deliveryTime}</span>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+
+                    <!-- Pedidos activos -->
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <h3 class="text-xl font-bold text-gray-800 mb-4">📦 Pedidos Activos (${stats.activeOrders})</h3>
+                        <div class="space-y-3 max-h-96 overflow-y-auto">
+                            ${myOrders.filter(o => !['delivered', 'cancelled'].includes(o.status)).map(order => `
+                                <div class="border rounded-lg p-3">
+                                    <div class="flex justify-between items-start mb-2">
+                                        <div>
+                                            <div class="font-semibold">Pedido #${order.orderNumber}</div>
+                                            <div class="text-sm text-gray-600">${order.customer.name}</div>
+                                        </div>
+                                        <span class="px-2 py-1 rounded text-xs text-white ${getStatusColor(order.status)}">
+                                            ${getStatusText(order.status)}
+                                        </span>
+                                    </div>
+                                    <div class="text-sm">
+                                        <div><strong>Items:</strong> ${order.items.length}</div>
+                                        <div><strong>Total:</strong> ${formatCurrency(order.subtotal)}</div>
+                                    </div>
+                                </div>
+                            `).join('') || '<p class="text-gray-500 text-center py-4">No hay pedidos activos</p>'}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderProducts() {
+            if (!selectedStore) {
+                return `
+                    <div class="bg-white rounded-xl shadow-lg p-12 text-center">
+                        <p class="text-gray-600 mb-4">Primero debes crear una tienda</p>
+                        <button class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition">
+                            Crear Tienda
+                        </button>
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="grid md:grid-cols-2 gap-6">
+                    <!-- Formulario de producto -->
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <h3 class="text-xl font-bold text-gray-800 mb-4">➕ Agregar Producto</h3>
+                        
+                        <form onsubmit="createProduct(event)" class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Nombre *</label>
+                                <input 
+                                    type="text" 
+                                    name="name"
+                                    placeholder="Ej: Tacos de Pastor"
+                                    class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                    required
+                                />
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Descripción</label>
+                                <textarea 
+                                    name="description"
+                                    placeholder="Descripción del producto..."
+                                    class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                    rows="3"
+                                ></textarea>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Precio *</label>
+                                    <input 
+                                        type="number" 
+                                        name="price"
+                                        placeholder="0.00"
+                                        min="0"
+                                        step="0.01"
+                                        class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                        required
+                                    />
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Categoría *</label>
+                                    <input 
+                                        type="text" 
+                                        name="category"
+                                        placeholder="Ej: Tacos"
+                                        class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                        required
+                                    />
+                                </div>
+                            </div>
+
+                            <button 
+                                type="submit" 
+                                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition"
+                            >
+                                Crear Producto
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- Lista de productos -->
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <h3 class="text-xl font-bold text-gray-800 mb-4">📋 Productos (${myProducts.length})</h3>
+                        
+                        <div class="space-y-3 max-h-[600px] overflow-y-auto">
+                            ${myProducts.map(product => `
+                                <div class="border rounded-lg p-4">
+                                    <div class="flex justify-between items-start mb-2">
+                                        <div class="flex-1">
+                                            <div class="font-bold text-gray-800">${product.name}</div>
+                                            <div class="text-sm text-gray-600">${product.description}</div>
+                                            <div class="text-sm text-gray-500 mt-1">${product.category}</div>
+                                        </div>
+                                        <div class="text-right">
+                                            <div class="font-bold text-lg text-gray-800">${formatCurrency(product.price)}</div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="flex gap-2 mt-3">
+                                        <button 
+                                            onclick="toggleProductAvailability(${product.id}, ${product.available})"
+                                            class="flex-1 px-3 py-2 rounded text-sm font-semibold transition ${product.available ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}"
+                                        >
+                                            ${product.available ? '✓ Disponible' : '✗ No disponible'}
+                                        </button>
+                                        <button 
+                                            onclick="deleteProduct(${product.id})"
+                                            class="px-3 py-2 bg-red-100 text-red-700 hover:bg-red-200 rounded text-sm font-semibold transition"
+                                        >
+                                            🗑️
+                                        </button>
+                                    </div>
+                                </div>
+                            `).join('')}
+                            
+                            ${myProducts.length === 0 ? '<p class="text-gray-500 text-center py-8">No hay productos aún</p>' : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderOrders() {
+            const activeOrders = myOrders.filter(o => !['delivered', 'cancelled'].includes(o.status));
+            const completedOrders = myOrders.filter(o => ['delivered', 'cancelled'].includes(o.status));
+            
+            return `
+                <div>
+                    ${activeOrders.length > 0 ? `
+                        <div class="mb-6">
+                            <h3 class="text-2xl font-bold text-gray-800 mb-4">Pedidos Activos (${activeOrders.length})</h3>
+                            <div class="grid md:grid-cols-2 gap-4">
+                                ${activeOrders.map(order => `
+                                    <div class="bg-white rounded-xl shadow-lg p-6">
+                                        <div class="flex justify-between items-start mb-4">
+                                            <div>
+                                                <div class="font-bold text-lg">Pedido #${order.orderNumber}</div>
+                                                <div class="text-sm text-gray-600">${order.customer.name}</div>
+                                            </div>
+                                            <span class="px-3 py-1 rounded text-xs text-white ${getStatusColor(order.status)}">
+                                                ${getStatusText(order.status)}
+                                            </span>
+                                        </div>
+                                        
+                                        <div class="bg-gray-50 rounded p-3 mb-3">
+                                            <div class="text-sm font-semibold text-gray-700 mb-2">Items:</div>
+                                            ${order.items.map(item => `
+                                                <div class="text-sm text-gray-600">${item.quantity}x ${item.name}</div>
+                                            `).join('')}
+                                        </div>
+                                        
+                                        <div class="flex justify-between items-center">
+                                            <div class="text-sm text-gray-600">Total a cobrar</div>
+                                            <div class="text-xl font-bold text-green-600">${formatCurrency(order.subtotal)}</div>
+                                        </div>
+                                        
+                                        ${order.notes ? `
+                                            <div class="mt-3 bg-yellow-50 border border-yellow-200 rounded p-2 text-sm">
+                                                <strong>Notas:</strong> ${order.notes}
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
+                    
+                    <div>
+                        <h3 class="text-2xl font-bold text-gray-800 mb-4">Historial (${completedOrders.length})</h3>
+                        ${completedOrders.length === 0 ? `
+                            <div class="bg-white rounded-xl shadow-lg p-12 text-center">
+                                <p class="text-gray-600">No hay pedidos completados aún</p>
+                            </div>
+                        ` : `
+                            <div class="bg-white rounded-xl shadow-lg p-6">
+                                <div class="space-y-3">
+                                    ${completedOrders.map(order => `
+                                        <div class="flex items-center justify-between p-3 bg-gray-50 rounded">
+                                            <div class="flex-1">
+                                                <div class="flex items-center gap-3">
+                                                    <span class="font-semibold">Pedido #${order.orderNumber}</span>
+                                                    <span class="px-2 py-1 rounded text-xs text-white ${getStatusColor(order.status)}">
+                                                        ${getStatusText(order.status)}
+                                                    </span>
+                                                </div>
+                                                <div class="text-sm text-gray-600">${order.customer.name} • ${new Date(order.createdAt).toLocaleDateString('es-MX')}</div>
+                                            </div>
+                                            <div class="font-bold text-green-600">${formatCurrency(order.subtotal)}</div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        `}
+                    </div>
+                </div>
+            `;
+        }
+
+        // Inicializar
+        apiCall('/users/profile')
+            .then(data => {
+                user = data.user;
+                if (user.role !== 'store_owner') {
+                    alert('Acceso no autorizado');
+                    window.location.href = '/';
+                    return;
+                }
+                loadData();
+            })
+            .catch(() => {
+                localStorage.removeItem('token');
+                window.location.href = '/';
+            });
+    </script>
+</body>
+</html>

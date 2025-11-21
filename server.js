@@ -16,16 +16,24 @@ const io = new Server(server, {
   }
 });
 
-// Crear carpeta uploads si no existe
+// Crear carpetas necesarias
 const uploadsDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
+const storesDir = path.join(__dirname, 'uploads/stores');
+const productsDir = path.join(__dirname, 'uploads/products');
 
-// Configuración de multer para subir archivos
+[uploadsDir, storesDir, productsDir].forEach(dir => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+});
+
+// Configuración de multer
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, 'uploads/');
+    const type = req.body.type || 'general';
+    const dest = type === 'store' ? storesDir : 
+                  type === 'product' ? productsDir : uploadsDir;
+    cb(null, dest);
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
@@ -45,7 +53,7 @@ const fileFilter = (req, file, cb) => {
 const upload = multer({ 
   storage: storage,
   fileFilter: fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 } // 5MB max
+  limits: { fileSize: 5 * 1024 * 1024 }
 });
 
 // Middleware
@@ -60,7 +68,7 @@ const PORT = process.env.PORT || 3000;
 const COMMISSION_RATE = 0.20;
 const SERVICE_FEE = 10;
 
-// Base de datos simulada
+// Base de datos simulada AMPLIADA
 let database = {
   users: [
     {
@@ -98,14 +106,109 @@ let database = {
       phone: '5500000000',
       role: 'admin',
       createdAt: new Date()
+    },
+    {
+      id: 4,
+      email: 'tienda@delivery.com',
+      password: 'tienda123',
+      name: 'María Comerciante',
+      phone: '5599887766',
+      role: 'store_owner',
+      createdAt: new Date()
     }
   ],
+  
+  // NUEVO: Tiendas
+  stores: [
+    {
+      id: 1,
+      name: 'Tacos El Güero',
+      description: 'Los mejores tacos de la ciudad',
+      category: 'Mexicana',
+      image: '/uploads/stores/tacos.jpg',
+      rating: 4.5,
+      deliveryTime: '20-30 min',
+      deliveryFee: 35,
+      minOrder: 50,
+      isOpen: true,
+      ownerId: 4,
+      location: { lat: 19.4326, lng: -99.1332, address: 'Av. Reforma 123' },
+      schedule: {
+        monday: { open: '09:00', close: '22:00' },
+        tuesday: { open: '09:00', close: '22:00' },
+        wednesday: { open: '09:00', close: '22:00' },
+        thursday: { open: '09:00', close: '22:00' },
+        friday: { open: '09:00', close: '23:00' },
+        saturday: { open: '10:00', close: '23:00' },
+        sunday: { open: '10:00', close: '21:00' }
+      },
+      createdAt: new Date()
+    },
+    {
+      id: 2,
+      name: 'Pizzería Napolitana',
+      description: 'Auténtica pizza italiana',
+      category: 'Italiana',
+      image: '/uploads/stores/pizza.jpg',
+      rating: 4.7,
+      deliveryTime: '30-40 min',
+      deliveryFee: 40,
+      minOrder: 80,
+      isOpen: true,
+      ownerId: 4,
+      location: { lat: 19.4330, lng: -99.1340, address: 'Calle Roma 456' },
+      createdAt: new Date()
+    },
+    {
+      id: 3,
+      name: 'Sushi Tokyo',
+      description: 'Sushi fresco y rolls especiales',
+      category: 'Japonesa',
+      image: '/uploads/stores/sushi.jpg',
+      rating: 4.8,
+      deliveryTime: '25-35 min',
+      deliveryFee: 45,
+      minOrder: 100,
+      isOpen: true,
+      ownerId: 4,
+      location: { lat: 19.4320, lng: -99.1325, address: 'Av. Japón 789' },
+      createdAt: new Date()
+    }
+  ],
+  
+  // NUEVO: Productos
+  products: [
+    // Tacos El Güero
+    { id: 1, storeId: 1, name: 'Tacos de Pastor', description: 'Con piña y cilantro', price: 45, image: '/uploads/products/pastor.jpg', category: 'Tacos', available: true },
+    { id: 2, storeId: 1, name: 'Tacos de Asada', description: 'Carne asada premium', price: 50, image: '/uploads/products/asada.jpg', category: 'Tacos', available: true },
+    { id: 3, storeId: 1, name: 'Quesadillas', description: 'Con queso Oaxaca', price: 40, image: '/uploads/products/quesadilla.jpg', category: 'Antojitos', available: true },
+    { id: 4, storeId: 1, name: 'Torta de Pastor', description: 'Pan telera con todo', price: 55, image: '/uploads/products/torta.jpg', category: 'Tortas', available: true },
+    
+    // Pizzería Napolitana
+    { id: 5, storeId: 2, name: 'Pizza Margarita', description: 'Tomate, mozzarella, albahaca', price: 150, image: '/uploads/products/margarita.jpg', category: 'Pizzas', available: true },
+    { id: 6, storeId: 2, name: 'Pizza Pepperoni', description: 'Doble pepperoni', price: 170, image: '/uploads/products/pepperoni.jpg', category: 'Pizzas', available: true },
+    { id: 7, storeId: 2, name: 'Lasagna', description: 'Casera con bechamel', price: 130, image: '/uploads/products/lasagna.jpg', category: 'Pastas', available: true },
+    
+    // Sushi Tokyo
+    { id: 8, storeId: 3, name: 'Roll California', description: '8 piezas con aguacate', price: 120, image: '/uploads/products/california.jpg', category: 'Rolls', available: true },
+    { id: 9, storeId: 3, name: 'Roll Philadelphia', description: '8 piezas con queso crema', price: 140, image: '/uploads/products/philadelphia.jpg', category: 'Rolls', available: true },
+    { id: 10, storeId: 3, name: 'Sashimi Mix', description: '12 cortes variados', price: 180, image: '/uploads/products/sashimi.jpg', category: 'Sashimi', available: true }
+  ],
+  
+  // Categorías de tiendas
+  storeCategories: [
+    'Mexicana', 'Italiana', 'Japonesa', 'China', 'Hamburguesas', 
+    'Pizza', 'Ensaladas', 'Postres', 'Café', 'Mariscos'
+  ],
+  
   orders: [],
   orderCounter: 1,
-  userCounter: 4
+  userCounter: 5,
+  storeCounter: 4,
+  productCounter: 11
 };
 
-// Utilidades
+// Utilidades (mantener las existentes)
 const generateOrderId = () => {
   return `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`.toUpperCase();
 };
@@ -152,7 +255,7 @@ const authenticateToken = (req, res, next) => {
 };
 
 // ============================================
-// RUTAS FRONTEND
+// RUTAS FRONTEND (mantener las existentes)
 // ============================================
 
 app.get('/', (req, res) => {
@@ -175,163 +278,334 @@ app.get('/register', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'register.html'));
 });
 
+// NUEVO: Panel de tienda
+app.get('/tienda', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'tienda.html'));
+});
+
 // ============================================
-// ENDPOINT DE UPLOAD DE IMÁGENES
+// NUEVAS RUTAS: TIENDAS
 // ============================================
 
-app.post('/api/upload', upload.single('file'), (req, res) => {
+// Obtener todas las tiendas (con filtros)
+app.get('/api/stores', (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No se subió ningún archivo' });
+    const { category, search, isOpen } = req.query;
+    let stores = [...database.stores];
+
+    // Filtrar por categoría
+    if (category && category !== 'all') {
+      stores = stores.filter(s => s.category === category);
     }
-    
+
+    // Filtrar por búsqueda
+    if (search) {
+      const searchLower = search.toLowerCase();
+      stores = stores.filter(s => 
+        s.name.toLowerCase().includes(searchLower) ||
+        s.description.toLowerCase().includes(searchLower)
+      );
+    }
+
+    // Filtrar por disponibilidad
+    if (isOpen === 'true') {
+      stores = stores.filter(s => s.isOpen);
+    }
+
     res.json({ 
-      message: 'Archivo subido exitosamente',
-      filename: req.file.filename,
-      url: `/uploads/${req.file.filename}`
+      stores,
+      total: stores.length,
+      categories: database.storeCategories
     });
   } catch (error) {
-    res.status(500).json({ error: 'Error al subir archivo', details: error.message });
+    res.status(500).json({ error: 'Error al obtener tiendas', details: error.message });
   }
 });
 
-// ============================================
-// RUTAS DE AUTENTICACIÓN
-// ============================================
-
-app.post('/api/auth/login', (req, res) => {
+// Obtener una tienda específica
+app.get('/api/stores/:storeId', (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { storeId } = req.params;
+    const store = database.stores.find(s => s.id === parseInt(storeId));
 
-    const user = database.users.find(u => u.email === email);
-    if (!user) {
-      return res.status(401).json({ error: 'Credenciales inválidas' });
+    if (!store) {
+      return res.status(404).json({ error: 'Tienda no encontrada' });
     }
 
-    if (password !== user.password) {
-      return res.status(401).json({ error: 'Credenciales inválidas' });
-    }
+    // Obtener productos de la tienda
+    const products = database.products.filter(p => p.storeId === store.id && p.available);
 
-    // Verificar si es conductor pendiente
-    if (user.role === 'driver' && user.approved === false) {
-      return res.status(403).json({ error: 'Tu cuenta está pendiente de aprobación' });
-    }
-
-    const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET);
-    const { password: _, ...userWithoutPassword } = user;
-
-    res.json({
-      message: 'Login exitoso',
-      token,
-      user: userWithoutPassword
+    res.json({ 
+      store,
+      products,
+      totalProducts: products.length
     });
   } catch (error) {
-    res.status(500).json({ error: 'Error al iniciar sesión', details: error.message });
+    res.status(500).json({ error: 'Error al obtener tienda', details: error.message });
   }
 });
 
-app.post('/api/auth/register', (req, res) => {
+// Crear tienda (solo admin o store_owner)
+app.post('/api/stores', authenticateToken, upload.single('image'), (req, res) => {
   try {
-    const { email, password, name, phone, role, address, vehicle, license, inePhoto, vehiclePhoto } = req.body;
+    if (!['admin', 'store_owner'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
 
-    // Validaciones básicas
-    if (!email || !password || !name || !phone || !role) {
+    const { name, description, category, deliveryTime, deliveryFee, minOrder, location } = req.body;
+
+    if (!name || !category) {
       return res.status(400).json({ error: 'Faltan campos requeridos' });
     }
 
-    // Verificar si el email ya existe
-    if (database.users.find(u => u.email === email)) {
-      return res.status(409).json({ error: 'El email ya está registrado' });
-    }
-
-    // Solo permitir registro de clientes y conductores
-    if (!['client', 'driver'].includes(role)) {
-      return res.status(400).json({ error: 'Rol inválido' });
-    }
-
-    // Validaciones específicas para conductores
-    if (role === 'driver') {
-      if (!vehicle || !license) {
-        return res.status(400).json({ error: 'Conductores deben proporcionar vehículo y licencia' });
-      }
-      if (!inePhoto || !vehiclePhoto) {
-        return res.status(400).json({ error: 'Conductores deben subir foto de INE y vehículo' });
-      }
-    }
-
-    const newUser = {
-      id: database.userCounter++,
-      email,
-      password,
+    const newStore = {
+      id: database.storeCounter++,
       name,
-      phone,
-      role,
+      description: description || '',
+      category,
+      image: req.file ? `/uploads/stores/${req.file.filename}` : '/uploads/stores/default.jpg',
+      rating: 5.0,
+      deliveryTime: deliveryTime || '30-40 min',
+      deliveryFee: parseFloat(deliveryFee) || 35,
+      minOrder: parseFloat(minOrder) || 50,
+      isOpen: true,
+      ownerId: req.user.id,
+      location: location ? JSON.parse(location) : { lat: 19.4326, lng: -99.1332, address: 'Por definir' },
       createdAt: new Date()
     };
 
-    if (role === 'client') {
-      newUser.address = address || '';
-    }
+    database.stores.push(newStore);
 
-    if (role === 'driver') {
-      newUser.vehicle = vehicle;
-      newUser.license = license;
-      newUser.inePhoto = inePhoto;
-      newUser.vehiclePhoto = vehiclePhoto;
-      newUser.available = false;
-      newUser.approved = false; // Requiere aprobación
-      newUser.currentLocation = { lat: 19.4326, lng: -99.1332 };
-      newUser.rating = 5.0;
-      newUser.totalDeliveries = 0;
-      newUser.totalEarnings = 0;
-    }
-
-    database.users.push(newUser);
-
-    // Si es cliente, auto-login
-    if (role === 'client') {
-      const token = jwt.sign({ id: newUser.id, email: newUser.email, role: newUser.role }, JWT_SECRET);
-      const { password: _, ...userWithoutPassword } = newUser;
-      
-      return res.status(201).json({
-        message: 'Registro exitoso',
-        token,
-        user: userWithoutPassword
-      });
-    }
-
-    // Si es conductor, no dar token (debe esperar aprobación)
     res.status(201).json({
-      message: 'Registro exitoso. Tu cuenta será revisada y aprobada pronto.',
-      pendingApproval: true
+      message: 'Tienda creada exitosamente',
+      store: newStore
     });
   } catch (error) {
-    res.status(500).json({ error: 'Error al registrar usuario', details: error.message });
+    res.status(500).json({ error: 'Error al crear tienda', details: error.message });
+  }
+});
+
+// Actualizar tienda
+app.put('/api/stores/:storeId', authenticateToken, upload.single('image'), (req, res) => {
+  try {
+    const { storeId } = req.params;
+    const store = database.stores.find(s => s.id === parseInt(storeId));
+
+    if (!store) {
+      return res.status(404).json({ error: 'Tienda no encontrada' });
+    }
+
+    // Verificar permisos
+    if (req.user.role !== 'admin' && store.ownerId !== req.user.id) {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    const { name, description, category, deliveryTime, deliveryFee, minOrder, isOpen } = req.body;
+
+    if (name) store.name = name;
+    if (description) store.description = description;
+    if (category) store.category = category;
+    if (deliveryTime) store.deliveryTime = deliveryTime;
+    if (deliveryFee) store.deliveryFee = parseFloat(deliveryFee);
+    if (minOrder) store.minOrder = parseFloat(minOrder);
+    if (isOpen !== undefined) store.isOpen = isOpen === 'true' || isOpen === true;
+    if (req.file) store.image = `/uploads/stores/${req.file.filename}`;
+
+    res.json({
+      message: 'Tienda actualizada exitosamente',
+      store
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al actualizar tienda', details: error.message });
   }
 });
 
 // ============================================
-// RUTAS DE PEDIDOS
+// NUEVAS RUTAS: PRODUCTOS
+// ============================================
+
+// Obtener productos de una tienda
+app.get('/api/stores/:storeId/products', (req, res) => {
+  try {
+    const { storeId } = req.params;
+    const { category } = req.query;
+
+    let products = database.products.filter(p => p.storeId === parseInt(storeId));
+
+    if (category && category !== 'all') {
+      products = products.filter(p => p.category === category);
+    }
+
+    // Agrupar por categoría
+    const categoriesSet = new Set(products.map(p => p.category));
+    const categories = Array.from(categoriesSet);
+
+    res.json({
+      products,
+      categories,
+      total: products.length
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener productos', details: error.message });
+  }
+});
+
+// Crear producto
+app.post('/api/products', authenticateToken, upload.single('image'), (req, res) => {
+  try {
+    const { storeId, name, description, price, category } = req.body;
+
+    // Verificar que la tienda existe
+    const store = database.stores.find(s => s.id === parseInt(storeId));
+    if (!store) {
+      return res.status(404).json({ error: 'Tienda no encontrada' });
+    }
+
+    // Verificar permisos
+    if (req.user.role !== 'admin' && store.ownerId !== req.user.id) {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    if (!name || !price) {
+      return res.status(400).json({ error: 'Faltan campos requeridos' });
+    }
+
+    const newProduct = {
+      id: database.productCounter++,
+      storeId: parseInt(storeId),
+      name,
+      description: description || '',
+      price: parseFloat(price),
+      image: req.file ? `/uploads/products/${req.file.filename}` : '/uploads/products/default.jpg',
+      category: category || 'General',
+      available: true,
+      createdAt: new Date()
+    };
+
+    database.products.push(newProduct);
+
+    res.status(201).json({
+      message: 'Producto creado exitosamente',
+      product: newProduct
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al crear producto', details: error.message });
+  }
+});
+
+// Actualizar producto
+app.put('/api/products/:productId', authenticateToken, upload.single('image'), (req, res) => {
+  try {
+    const { productId } = req.params;
+    const product = database.products.find(p => p.id === parseInt(productId));
+
+    if (!product) {
+      return res.status(404).json({ error: 'Producto no encontrado' });
+    }
+
+    // Verificar permisos
+    const store = database.stores.find(s => s.id === product.storeId);
+    if (req.user.role !== 'admin' && store.ownerId !== req.user.id) {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    const { name, description, price, category, available } = req.body;
+
+    if (name) product.name = name;
+    if (description) product.description = description;
+    if (price) product.price = parseFloat(price);
+    if (category) product.category = category;
+    if (available !== undefined) product.available = available === 'true' || available === true;
+    if (req.file) product.image = `/uploads/products/${req.file.filename}`;
+
+    res.json({
+      message: 'Producto actualizado exitosamente',
+      product
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al actualizar producto', details: error.message });
+  }
+});
+
+// Eliminar producto
+app.delete('/api/products/:productId', authenticateToken, (req, res) => {
+  try {
+    const { productId } = req.params;
+    const productIndex = database.products.findIndex(p => p.id === parseInt(productId));
+
+    if (productIndex === -1) {
+      return res.status(404).json({ error: 'Producto no encontrado' });
+    }
+
+    const product = database.products[productIndex];
+    const store = database.stores.find(s => s.id === product.storeId);
+
+    if (req.user.role !== 'admin' && store.ownerId !== req.user.id) {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    database.products.splice(productIndex, 1);
+
+    res.json({ message: 'Producto eliminado exitosamente' });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al eliminar producto', details: error.message });
+  }
+});
+
+// ============================================
+// RUTAS DE PEDIDOS ACTUALIZADAS
 // ============================================
 
 app.post('/api/orders', authenticateToken, (req, res) => {
   try {
-    const { items, deliveryAddress, paymentMethod, notes } = req.body;
+    const { storeId, items, deliveryAddress, paymentMethod, notes } = req.body;
     const userId = req.user.id;
+
+    if (!storeId) {
+      return res.status(400).json({ error: 'Debe especificar una tienda' });
+    }
 
     if (!items || items.length === 0) {
       return res.status(400).json({ error: 'El pedido debe tener al menos un item' });
     }
 
-    if (!deliveryAddress || !deliveryAddress.lat || !deliveryAddress.lng) {
-      return res.status(400).json({ error: 'Dirección de entrega inválida' });
+    const store = database.stores.find(s => s.id === parseInt(storeId));
+    if (!store) {
+      return res.status(404).json({ error: 'Tienda no encontrada' });
     }
 
+    if (!store.isOpen) {
+      return res.status(400).json({ error: 'La tienda está cerrada' });
+    }
+
+    // Calcular subtotal verificando productos
+    let subtotal = 0;
+    const orderItems = items.map(item => {
+      const product = database.products.find(p => p.id === item.productId);
+      if (!product || !product.available) {
+        throw new Error(`Producto no disponible: ${item.productId}`);
+      }
+      subtotal += product.price * item.quantity;
+      return {
+        productId: product.id,
+        name: product.name,
+        price: product.price,
+        quantity: item.quantity,
+        notes: item.notes || ''
+      };
+    });
+
+    if (subtotal < store.minOrder) {
+      return res.status(400).json({ 
+        error: `El pedido mínimo es de $${store.minOrder}`,
+        minOrder: store.minOrder,
+        currentTotal: subtotal
+      });
+    }
+
+    // Buscar conductor disponible
     const availableDrivers = database.users.filter(u => 
-      u.role === 'driver' && 
-      u.available && 
-      u.approved &&
-      u.currentLocation
+      u.role === 'driver' && u.available && u.approved && u.currentLocation
     );
 
     if (availableDrivers.length === 0) {
@@ -340,16 +614,16 @@ app.post('/api/orders', authenticateToken, (req, res) => {
 
     let nearestDriver = availableDrivers[0];
     let minDistance = calculateDistance(
-      deliveryAddress.lat,
-      deliveryAddress.lng,
+      store.location.lat,
+      store.location.lng,
       nearestDriver.currentLocation.lat,
       nearestDriver.currentLocation.lng
     );
 
     availableDrivers.forEach(driver => {
       const distance = calculateDistance(
-        deliveryAddress.lat,
-        deliveryAddress.lng,
+        store.location.lat,
+        store.location.lng,
         driver.currentLocation.lat,
         driver.currentLocation.lng
       );
@@ -359,8 +633,7 @@ app.post('/api/orders', authenticateToken, (req, res) => {
       }
     });
 
-    const subtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    const deliveryFee = calculateDeliveryFee(minDistance);
+    const deliveryFee = store.deliveryFee || calculateDeliveryFee(minDistance);
     const serviceFee = SERVICE_FEE;
     const commission = deliveryFee * COMMISSION_RATE;
     const driverEarnings = deliveryFee - commission;
@@ -375,7 +648,14 @@ app.post('/api/orders', authenticateToken, (req, res) => {
       customer: database.users.find(u => u.id === userId),
       driverId: nearestDriver.id,
       driver: nearestDriver,
-      items,
+      storeId: store.id,
+      store: {
+        id: store.id,
+        name: store.name,
+        image: store.image,
+        location: store.location
+      },
+      items: orderItems,
       deliveryAddress,
       paymentMethod: paymentMethod || 'cash',
       notes: notes || '',
@@ -412,6 +692,120 @@ app.post('/api/orders', authenticateToken, (req, res) => {
   }
 });
 
+// ============================================
+// MANTENER TODAS LAS DEMÁS RUTAS EXISTENTES
+// ============================================
+
+// Upload de imágenes
+app.post('/api/upload', upload.single('file'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No se subió ningún archivo' });
+    }
+    
+    res.json({ 
+      message: 'Archivo subido exitosamente',
+      filename: req.file.filename,
+      url: `/uploads/${req.file.filename}`
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al subir archivo', details: error.message });
+  }
+});
+
+// Autenticación (mantener las existentes)
+app.post('/api/auth/login', (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const user = database.users.find(u => u.email === email);
+    
+    if (!user || password !== user.password) {
+      return res.status(401).json({ error: 'Credenciales inválidas' });
+    }
+
+    if (user.role === 'driver' && user.approved === false) {
+      return res.status(403).json({ error: 'Tu cuenta está pendiente de aprobación' });
+    }
+
+    const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET);
+    const { password: _, ...userWithoutPassword } = user;
+
+    res.json({ message: 'Login exitoso', token, user: userWithoutPassword });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al iniciar sesión', details: error.message });
+  }
+});
+
+app.post('/api/auth/register', (req, res) => {
+  try {
+    const { email, password, name, phone, role, address, vehicle, license, inePhoto, vehiclePhoto } = req.body;
+
+    if (!email || !password || !name || !phone || !role) {
+      return res.status(400).json({ error: 'Faltan campos requeridos' });
+    }
+
+    if (database.users.find(u => u.email === email)) {
+      return res.status(409).json({ error: 'El email ya está registrado' });
+    }
+
+    if (!['client', 'driver', 'store_owner'].includes(role)) {
+      return res.status(400).json({ error: 'Rol inválido' });
+    }
+
+    if (role === 'driver' && (!vehicle || !license || !inePhoto || !vehiclePhoto)) {
+      return res.status(400).json({ error: 'Conductores deben proporcionar toda la información requerida' });
+    }
+
+    const newUser = {
+      id: database.userCounter++,
+      email,
+      password,
+      name,
+      phone,
+      role,
+      createdAt: new Date()
+    };
+
+    if (role === 'client') {
+      newUser.address = address || '';
+    }
+
+    if (role === 'driver') {
+      newUser.vehicle = vehicle;
+      newUser.license = license;
+      newUser.inePhoto = inePhoto;
+      newUser.vehiclePhoto = vehiclePhoto;
+      newUser.available = false;
+      newUser.approved = false;
+      newUser.currentLocation = { lat: 19.4326, lng: -99.1332 };
+      newUser.rating = 5.0;
+      newUser.totalDeliveries = 0;
+      newUser.totalEarnings = 0;
+    }
+
+    database.users.push(newUser);
+
+    if (role === 'client' || role === 'store_owner') {
+      const token = jwt.sign({ id: newUser.id, email: newUser.email, role: newUser.role }, JWT_SECRET);
+      const { password: _, ...userWithoutPassword } = newUser;
+      
+      return res.status(201).json({
+        message: 'Registro exitoso',
+        token,
+        user: userWithoutPassword
+      });
+    }
+
+    res.status(201).json({
+      message: 'Registro exitoso. Tu cuenta será revisada y aprobada pronto.',
+      pendingApproval: true
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al registrar usuario', details: error.message });
+  }
+});
+
+// Obtener todas las órdenes (mantener existente)
 app.get('/api/orders', authenticateToken, (req, res) => {
   try {
     const userId = req.user.id;
@@ -422,16 +816,16 @@ app.get('/api/orders', authenticateToken, (req, res) => {
       orders = database.orders.filter(o => o.customerId === userId);
     } else if (userRole === 'driver') {
       orders = database.orders.filter(o => o.driverId === userId);
+    } else if (userRole === 'store_owner') {
+      const userStores = database.stores.filter(s => s.ownerId === userId).map(s => s.id);
+      orders = database.orders.filter(o => userStores.includes(o.storeId));
     } else {
       orders = database.orders;
     }
 
     orders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-    res.json({
-      orders,
-      total: orders.length
-    });
+    res.json({ orders, total: orders.length });
   } catch (error) {
     res.status(500).json({ error: 'Error al obtener pedidos', details: error.message });
   }
@@ -450,7 +844,10 @@ app.get('/api/orders/:orderId', authenticateToken, (req, res) => {
     const userRole = req.user.role;
 
     if (userRole !== 'admin' && order.customerId !== userId && order.driverId !== userId) {
-      return res.status(403).json({ error: 'No autorizado' });
+      const store = database.stores.find(s => s.id === order.storeId);
+      if (!store || store.ownerId !== userId) {
+        return res.status(403).json({ error: 'No autorizado' });
+      }
     }
 
     res.json({ order });
@@ -509,24 +906,15 @@ app.put('/api/orders/:orderId/status', authenticateToken, (req, res) => {
       }
     }
 
-    io.emit(`client:${order.customerId}`, {
-      type: 'order_update',
-      order
-    });
+    io.emit(`client:${order.customerId}`, { type: 'order_update', order });
 
-    res.json({
-      message: 'Estado actualizado exitosamente',
-      order
-    });
+    res.json({ message: 'Estado actualizado exitosamente', order });
   } catch (error) {
     res.status(500).json({ error: 'Error al actualizar estado', details: error.message });
   }
 });
 
-// ============================================
-// RUTAS DE USUARIO
-// ============================================
-
+// Usuario
 app.get('/api/users/profile', authenticateToken, (req, res) => {
   try {
     const user = database.users.find(u => u.id === req.user.id);
@@ -541,10 +929,7 @@ app.get('/api/users/profile', authenticateToken, (req, res) => {
   }
 });
 
-// ============================================
-// RUTAS DE ADMINISTRADOR
-// ============================================
-
+// Admin
 app.get('/api/admin/stats', authenticateToken, (req, res) => {
   try {
     if (req.user.role !== 'admin') {
@@ -570,6 +955,8 @@ app.get('/api/admin/stats', authenticateToken, (req, res) => {
       pendingDrivers: database.users.filter(u => u.role === 'driver' && !u.approved).length,
       availableDrivers: database.users.filter(u => u.role === 'driver' && u.available && u.approved).length,
       totalClients: database.users.filter(u => u.role === 'client').length,
+      totalStores: database.stores.length,
+      totalProducts: database.products.length,
       today: today,
       ordersToday: allOrders.filter(o => new Date(o.createdAt).toDateString() === today).length,
       earningsToday: completedOrders
@@ -644,7 +1031,6 @@ app.delete('/api/admin/drivers/:driverId/reject', authenticateToken, (req, res) 
     }
 
     database.users.splice(driverIndex, 1);
-
     res.json({ message: 'Conductor rechazado y eliminado' });
   } catch (error) {
     res.status(500).json({ error: 'Error al rechazar conductor', details: error.message });
@@ -655,7 +1041,6 @@ app.get('/api/stats', authenticateToken, (req, res) => {
   try {
     const userId = req.user.id;
     const userRole = req.user.role;
-
     let stats = {};
 
     if (userRole === 'client') {
@@ -687,6 +1072,23 @@ app.get('/api/stats', authenticateToken, (req, res) => {
           })
           .reduce((sum, o) => sum + (o.driverEarnings || 0), 0)
       };
+    } else if (userRole === 'store_owner') {
+      const userStores = database.stores.filter(s => s.ownerId === userId);
+      const storeIds = userStores.map(s => s.id);
+      const storeOrders = database.orders.filter(o => storeIds.includes(o.storeId));
+      const completedOrders = storeOrders.filter(o => o.status === 'delivered');
+      
+      stats = {
+        totalStores: userStores.length,
+        totalProducts: database.products.filter(p => storeIds.includes(p.storeId)).length,
+        totalOrders: storeOrders.length,
+        totalRevenue: completedOrders.reduce((sum, o) => sum + o.subtotal, 0),
+        activeOrders: storeOrders.filter(o => !['delivered', 'cancelled'].includes(o.status)).length,
+        ordersToday: storeOrders.filter(o => {
+          const today = new Date().toDateString();
+          return new Date(o.createdAt).toDateString() === today;
+        }).length
+      };
     }
 
     res.json({ stats });
@@ -695,10 +1097,7 @@ app.get('/api/stats', authenticateToken, (req, res) => {
   }
 });
 
-// ============================================
 // WebSocket
-// ============================================
-
 io.on('connection', (socket) => {
   console.log('Cliente conectado:', socket.id);
 
@@ -722,15 +1121,14 @@ io.on('connection', (socket) => {
   });
 });
 
-// ============================================
-// RUTAS ADICIONALES
-// ============================================
-
+// Health check
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date(),
-    uptime: process.uptime()
+    uptime: process.uptime(),
+    stores: database.stores.length,
+    products: database.products.length
   });
 });
 
@@ -743,13 +1141,14 @@ app.use((req, res) => {
 server.listen(PORT, () => {
   console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
   console.log(`📡 WebSocket habilitado`);
-  console.log(`💰 Comisión: ${COMMISSION_RATE * 100}% | Fee: $${SERVICE_FEE}`);
+  console.log(`💰 Comisión: ${COMMISSION_RATE * 100}% | Fee: ${SERVICE_FEE}`);
+  console.log(`🏪 Tiendas: ${database.stores.length} | Productos: ${database.products.length}`);
   console.log(`\n🌐 URLs disponibles:`);
   console.log(`   / → Landing`);
   console.log(`   /cliente → Panel Cliente`);
   console.log(`   /conductor → Panel Conductor`);
   console.log(`   /admin → Panel Admin`);
+  console.log(`   /tienda → Panel Tienda`);
 });
 
 module.exports = { app, server, io };
-// v2.0 - Sistema con validación de fotos 20251121
