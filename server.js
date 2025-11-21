@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const http = require('http');
@@ -117,10 +118,11 @@ app.use(express.static('public'));
 app.use('/uploads', express.static('uploads'));
 
 // Constantes
-const JWT_SECRET = 'tu-secreto-super-seguro';
+const JWT_SECRET = process.env.JWT_SECRET || 'tu-secreto-super-seguro-CAMBIAR-EN-PRODUCCION';
 const PORT = process.env.PORT || 3000;
-const COMMISSION_RATE = 0.20;
-const SERVICE_FEE = 10;
+const COMMISSION_RATE = parseFloat(process.env.COMMISSION_RATE) || 0.20;
+const SERVICE_FEE = parseFloat(process.env.SERVICE_FEE) || 10;
+const DB_FILE = process.env.DB_FILE || 'database.json';
 
 // ============================================
 // ESTADOS DE PEDIDOS Y PERMISOS
@@ -352,6 +354,47 @@ let database = {
 };
 
 // ============================================
+// FUNCIONES DE PERSISTENCIA
+// ============================================
+
+function saveDatabase() {
+  try {
+    fs.writeFileSync(DB_FILE, JSON.stringify(database, null, 2));
+    console.log('💾 Base de datos guardada');
+  } catch (error) {
+    console.error('❌ Error guardando base de datos:', error);
+  }
+}
+
+function loadDatabase() {
+  try {
+    if (fs.existsSync(DB_FILE)) {
+      const data = fs.readFileSync(DB_FILE, 'utf8');
+      database = JSON.parse(data);
+      console.log('📂 Base de datos cargada desde archivo');
+      console.log(`   👥 Usuarios: ${database.users.length}`);
+      console.log(`   🏪 Tiendas: ${database.stores.length}`);
+      console.log(`   📦 Productos: ${database.products.length}`);
+      console.log(`   📋 Pedidos: ${database.orders.length}`);
+    } else {
+      console.log('📝 Usando base de datos inicial');
+      saveDatabase();
+    }
+  } catch (error) {
+    console.error('❌ Error cargando base de datos:', error);
+    console.log('📝 Usando base de datos inicial');
+  }
+}
+
+// Cargar base de datos al iniciar
+loadDatabase();
+
+// Guardar automáticamente cada 5 minutos
+setInterval(() => {
+  saveDatabase();
+}, 5 * 60 * 1000);
+
+// ============================================
 // MIDDLEWARE DE AUTENTICACIÓN
 // ============================================
 
@@ -413,6 +456,7 @@ app.post('/api/auth/register', (req, res) => {
     }
 
     database.users.push(newUser);
+    saveDatabase();
 
     const token = jwt.sign(
       { id: newUser.id, email: newUser.email, role: newUser.role },
@@ -551,6 +595,7 @@ app.post('/api/stores', authenticateToken, upload.single('image'), (req, res) =>
     };
 
     database.stores.push(newStore);
+    saveDatabase();
 
     // Notificar a todos los clientes de nueva tienda
     notifyRole('client', {
@@ -600,6 +645,7 @@ app.put('/api/stores/:storeId', authenticateToken, upload.single('image'), (req,
       };
     }
 
+    saveDatabase();
     res.json({ 
       message: 'Tienda actualizada exitosamente',
       store 
@@ -626,6 +672,7 @@ app.delete('/api/stores/:storeId', authenticateToken, (req, res) => {
 
     database.stores.splice(storeIndex, 1);
     database.products = database.products.filter(p => p.storeId !== parseInt(storeId));
+    saveDatabase();
 
     res.json({ message: 'Tienda eliminada exitosamente' });
   } catch (error) {
@@ -684,6 +731,7 @@ app.post('/api/products', authenticateToken, upload.single('image'), (req, res) 
     };
 
     database.products.push(newProduct);
+    saveDatabase();
 
     res.status(201).json({ 
       message: 'Producto creado exitosamente',
@@ -718,6 +766,7 @@ app.put('/api/products/:productId', authenticateToken, upload.single('image'), (
     if (preparationTime) product.preparationTime = parseInt(preparationTime);
     if (req.file) product.image = `/uploads/products/${req.file.filename}`;
 
+    saveDatabase();
     res.json({ 
       message: 'Producto actualizado exitosamente',
       product 
@@ -744,6 +793,7 @@ app.delete('/api/products/:productId', authenticateToken, (req, res) => {
     }
 
     database.products.splice(productIndex, 1);
+    saveDatabase();
     res.json({ message: 'Producto eliminado exitosamente' });
   } catch (error) {
     res.status(500).json({ error: 'Error al eliminar producto', details: error.message });
@@ -833,6 +883,7 @@ app.post('/api/orders', authenticateToken, (req, res) => {
     };
 
     database.orders.push(newOrder);
+    saveDatabase();
 
     // 🔔 NOTIFICACIONES: Nuevo pedido
     // Notificar al dueño de la tienda
@@ -1083,6 +1134,7 @@ app.put('/api/orders/:orderId/status', authenticateToken, (req, res) => {
       });
     }
 
+    saveDatabase();
     res.json({ 
       message: 'Estado actualizado exitosamente',
       order 
@@ -1172,6 +1224,7 @@ app.put('/api/orders/:orderId/assign', authenticateToken, (req, res) => {
       timestamp: new Date()
     });
 
+    saveDatabase();
     res.json({ 
       message: 'Pedido asignado exitosamente',
       order,
@@ -1241,6 +1294,7 @@ app.put('/api/drivers/:driverId/availability', authenticateToken, (req, res) => 
 
     driver.available = available;
 
+    saveDatabase();
     res.json({ 
       message: `Estado cambiado a ${available ? 'disponible' : 'no disponible'}`,
       driver: { id: driver.id, available: driver.available }
@@ -1366,6 +1420,7 @@ app.put('/api/admin/drivers/:driverId/approve', authenticateToken, (req, res) =>
       timestamp: new Date()
     });
 
+    saveDatabase();
     res.json({
       message: 'Conductor aprobado',
       driver: { id: driver.id, name: driver.name, email: driver.email, approved: true }
@@ -1399,6 +1454,7 @@ app.delete('/api/admin/drivers/:driverId/reject', authenticateToken, (req, res) 
     });
 
     database.users.splice(driverIndex, 1);
+    saveDatabase();
     res.json({ message: 'Conductor rechazado' });
   } catch (error) {
     res.status(500).json({ error: 'Error al rechazar conductor', details: error.message });
