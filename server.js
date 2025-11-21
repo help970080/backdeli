@@ -752,3 +752,4 @@ server.listen(PORT, () => {
 });
 
 module.exports = { app, server, io };
+// v2.0 - Sistema con validación de fotos 20251121
