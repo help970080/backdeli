@@ -193,7 +193,9 @@
                 'pending': 'bg-yellow-500',
                 'accepted': 'bg-blue-500',
                 'preparing': 'bg-indigo-500',
-                'on_way': 'bg-purple-500',
+                'ready': 'bg-purple-500',
+                'picked_up': 'bg-violet-500',
+                'on_way': 'bg-orange-500',
                 'delivered': 'bg-green-500',
                 'cancelled': 'bg-red-500'
             };
@@ -202,12 +204,14 @@
 
         function getStatusText(status) {
             const texts = {
-                'pending': 'Pendiente',
-                'accepted': 'Aceptado',
-                'preparing': 'Preparando',
-                'on_way': 'En camino',
-                'delivered': 'Entregado',
-                'cancelled': 'Cancelado'
+                'pending': '⏳ Pendiente',
+                'accepted': '✓ Aceptado',
+                'preparing': '👨‍🍳 Preparando',
+                'ready': '📦 Listo',
+                'picked_up': '🚗 Recogido',
+                'on_way': '🛵 En camino',
+                'delivered': '✅ Entregado',
+                'cancelled': '❌ Cancelado'
             };
             return texts[status] || status;
         }

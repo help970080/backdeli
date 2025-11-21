@@ -148,12 +148,27 @@
             }).format(amount || 0);
         }
 
+        async function updateOrderStatus(orderId, newStatus) {
+            try {
+                await apiCall(`/orders/${orderId}/status`, 'PUT', { 
+                    status: newStatus,
+                    note: `Actualizado por tienda`
+                });
+                alert('Estado actualizado');
+                loadData();
+            } catch (error) {
+                console.error('Error actualizando estado:', error);
+            }
+        }
+
         function getStatusColor(status) {
             const colors = {
                 'pending': 'bg-yellow-500',
                 'accepted': 'bg-blue-500',
                 'preparing': 'bg-indigo-500',
-                'on_way': 'bg-purple-500',
+                'ready': 'bg-purple-500',
+                'picked_up': 'bg-violet-500',
+                'on_way': 'bg-orange-500',
                 'delivered': 'bg-green-500',
                 'cancelled': 'bg-red-500'
             };
@@ -162,14 +177,30 @@
 
         function getStatusText(status) {
             const texts = {
-                'pending': 'Pendiente',
-                'accepted': 'Aceptado',
-                'preparing': 'Preparando',
-                'on_way': 'En camino',
-                'delivered': 'Entregado',
-                'cancelled': 'Cancelado'
+                'pending': '⏳ Pendiente de aceptar',
+                'accepted': '✓ Aceptado',
+                'preparing': '👨‍🍳 Preparando',
+                'ready': '📦 Listo para recoger',
+                'picked_up': '🚗 Recogido',
+                'on_way': '🛵 En camino',
+                'delivered': '✅ Entregado',
+                'cancelled': '❌ Cancelado'
             };
             return texts[status] || status;
+        }
+
+        function getNextAction(status) {
+            const actions = {
+                'pending': { text: 'Aceptar Pedido', nextStatus: 'accepted', color: 'bg-blue-600 hover:bg-blue-700' },
+                'accepted': { text: 'Comenzar Preparación', nextStatus: 'preparing', color: 'bg-indigo-600 hover:bg-indigo-700' },
+                'preparing': { text: 'Marcar Listo', nextStatus: 'ready', color: 'bg-purple-600 hover:bg-purple-700' },
+                'ready': null, // Espera conductor
+                'picked_up': null, // Conductor lo tiene
+                'on_way': null, // Conductor entregando
+                'delivered': null,
+                'cancelled': null
+            };
+            return actions[status];
         }
 
         function render() {
