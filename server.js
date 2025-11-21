@@ -4,6 +4,8 @@ const http = require('http');
 const path = require('path');
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
+const multer = require('multer');
+const fs = require('fs');
 
 const app = express();
 const server = http.createServer(app);
@@ -14,10 +16,43 @@ const io = new Server(server, {
   }
 });
 
+// Crear carpeta uploads si no existe
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// Configuración de multer para subir archivos
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/');
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const fileFilter = (req, file, cb) => {
+  const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+  if (allowedTypes.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(new Error('Solo se permiten imágenes (JPG, PNG, WEBP)'), false);
+  }
+};
+
+const upload = multer({ 
+  storage: storage,
+  fileFilter: fileFilter,
+  limits: { fileSize: 5 * 1024 * 1024 } // 5MB max
+});
+
 // Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
+app.use('/uploads', express.static('uploads'));
 
 // Constantes
 const JWT_SECRET = 'tu-secreto-super-seguro';
@@ -141,6 +176,26 @@ app.get('/register', (req, res) => {
 });
 
 // ============================================
+// ENDPOINT DE UPLOAD DE IMÁGENES
+// ============================================
+
+app.post('/api/upload', upload.single('file'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No se subió ningún archivo' });
+    }
+    
+    res.json({ 
+      message: 'Archivo subido exitosamente',
+      filename: req.file.filename,
+      url: `/uploads/${req.file.filename}`
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al subir archivo', details: error.message });
+  }
+});
+
+// ============================================
 // RUTAS DE AUTENTICACIÓN
 // ============================================
 
@@ -177,7 +232,7 @@ app.post('/api/auth/login', (req, res) => {
 
 app.post('/api/auth/register', (req, res) => {
   try {
-    const { email, password, name, phone, role, address, vehicle, license } = req.body;
+    const { email, password, name, phone, role, address, vehicle, license, inePhoto, vehiclePhoto } = req.body;
 
     // Validaciones básicas
     if (!email || !password || !name || !phone || !role) {
@@ -195,8 +250,13 @@ app.post('/api/auth/register', (req, res) => {
     }
 
     // Validaciones específicas para conductores
-    if (role === 'driver' && (!vehicle || !license)) {
-      return res.status(400).json({ error: 'Conductores deben proporcionar vehículo y licencia' });
+    if (role === 'driver') {
+      if (!vehicle || !license) {
+        return res.status(400).json({ error: 'Conductores deben proporcionar vehículo y licencia' });
+      }
+      if (!inePhoto || !vehiclePhoto) {
+        return res.status(400).json({ error: 'Conductores deben subir foto de INE y vehículo' });
+      }
     }
 
     const newUser = {
@@ -216,6 +276,8 @@ app.post('/api/auth/register', (req, res) => {
     if (role === 'driver') {
       newUser.vehicle = vehicle;
       newUser.license = license;
+      newUser.inePhoto = inePhoto;
+      newUser.vehiclePhoto = vehiclePhoto;
       newUser.available = false;
       newUser.approved = false; // Requiere aprobación
       newUser.currentLocation = { lat: 19.4326, lng: -99.1332 };
