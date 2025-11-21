@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sistema Delivery - Login</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
 </head>
 <body class="bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 min-h-screen flex items-center justify-center">
     <div class="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
@@ -65,6 +66,7 @@
         </div>
     </div>
 
+    <script src="/notifications.js"></script>
     <script>
         const form = document.getElementById('loginForm');
         const errorDiv = document.getElementById('error');
@@ -89,7 +91,7 @@
                     throw new Error(data.error || 'Error al iniciar sesión');
                 }
 
-                // Guardar token
+                // Guardar token y usuario
                 localStorage.setItem('token', data.token);
                 localStorage.setItem('user', JSON.stringify(data.user));
 
@@ -112,4 +114,4 @@
     </script>
 </body>
 </html>
-<!-- v3.0 - Login con soporte para tienda -->
+<!-- v4.0 - Login con notificaciones integradas -->

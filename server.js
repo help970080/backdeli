@@ -16,6 +16,60 @@ const io = new Server(server, {
   }
 });
 
+// Mapa de usuarios conectados
+const userSockets = new Map();
+
+// ============================================
+// FUNCIONES DE NOTIFICACIÓN
+// ============================================
+
+// Notificar a un usuario específico
+function notifyUser(userId, notification) {
+  const socketId = userSockets.get(userId.toString());
+  if (socketId) {
+    io.to(socketId).emit('notification', notification);
+    console.log(`📬 Notificación enviada a usuario ${userId}:`, notification.title);
+    return true;
+  }
+  console.log(`⚠️ Usuario ${userId} no está conectado`);
+  return false;
+}
+
+// Notificar a todos los usuarios conectados
+function notifyAll(notification) {
+  io.emit('notification', notification);
+  console.log(`📢 Notificación enviada a TODOS:`, notification.title);
+}
+
+// Notificar a todos los usuarios de un rol específico
+function notifyRole(role, notification) {
+  const usersOfRole = database.users
+    .filter(u => u.role === role)
+    .map(u => u.id);
+  
+  let sentCount = 0;
+  usersOfRole.forEach(userId => {
+    if (notifyUser(userId, notification)) {
+      sentCount++;
+    }
+  });
+  
+  console.log(`📢 Notificación enviada a rol ${role}: ${sentCount}/${usersOfRole.length} usuarios`);
+  return sentCount;
+}
+
+// Notificar a múltiples usuarios específicos
+function notifyMultiple(userIds, notification) {
+  let sentCount = 0;
+  userIds.forEach(userId => {
+    if (notifyUser(userId, notification)) {
+      sentCount++;
+    }
+  });
+  console.log(`📬 Notificación enviada a ${sentCount}/${userIds.length} usuarios`);
+  return sentCount;
+}
+
 // Crear carpetas necesarias
 const uploadsDir = path.join(__dirname, 'uploads');
 const storesDir = path.join(__dirname, 'uploads/stores');
@@ -220,66 +274,88 @@ let database = {
       minOrder: 100,
       isOpen: true,
       ownerId: 4,
-      location: { lat: 19.4320, lng: -99.1325, address: 'Av. Japón 789' },
+      location: { lat: 19.4335, lng: -99.1335, address: 'Av. Chapultepec 789' },
       createdAt: new Date()
     }
   ],
-  
+
   products: [
-    { id: 1, storeId: 1, name: 'Tacos de Pastor', description: 'Con piña y cilantro', price: 45, image: '/uploads/products/pastor.jpg', category: 'Tacos', available: true },
-    { id: 2, storeId: 1, name: 'Tacos de Asada', description: 'Carne asada premium', price: 50, image: '/uploads/products/asada.jpg', category: 'Tacos', available: true },
-    { id: 3, storeId: 1, name: 'Quesadillas', description: 'Con queso Oaxaca', price: 40, image: '/uploads/products/quesadilla.jpg', category: 'Antojitos', available: true },
-    { id: 4, storeId: 1, name: 'Torta de Pastor', description: 'Pan telera con todo', price: 55, image: '/uploads/products/torta.jpg', category: 'Tortas', available: true },
-    { id: 5, storeId: 2, name: 'Pizza Margarita', description: 'Tomate, mozzarella, albahaca', price: 150, image: '/uploads/products/margarita.jpg', category: 'Pizzas', available: true },
-    { id: 6, storeId: 2, name: 'Pizza Pepperoni', description: 'Doble pepperoni', price: 170, image: '/uploads/products/pepperoni.jpg', category: 'Pizzas', available: true },
-    { id: 7, storeId: 2, name: 'Lasagna', description: 'Casera con bechamel', price: 130, image: '/uploads/products/lasagna.jpg', category: 'Pastas', available: true },
-    { id: 8, storeId: 3, name: 'Roll California', description: '8 piezas con aguacate', price: 120, image: '/uploads/products/california.jpg', category: 'Rolls', available: true },
-    { id: 9, storeId: 3, name: 'Roll Philadelphia', description: '8 piezas con queso crema', price: 140, image: '/uploads/products/philadelphia.jpg', category: 'Rolls', available: true },
-    { id: 10, storeId: 3, name: 'Sashimi Mix', description: '12 cortes variados', price: 180, image: '/uploads/products/sashimi.jpg', category: 'Sashimi', available: true }
+    {
+      id: 1,
+      storeId: 1,
+      name: 'Tacos de Pastor',
+      description: 'Tradicionales tacos al pastor con piña',
+      price: 45,
+      image: '/uploads/products/tacos-pastor.jpg',
+      category: 'Tacos',
+      available: true,
+      preparationTime: 10
+    },
+    {
+      id: 2,
+      storeId: 1,
+      name: 'Tacos de Bistec',
+      description: 'Tacos de bistec con cebolla y cilantro',
+      price: 50,
+      image: '/uploads/products/tacos-bistec.jpg',
+      category: 'Tacos',
+      available: true,
+      preparationTime: 12
+    },
+    {
+      id: 3,
+      storeId: 2,
+      name: 'Pizza Margarita',
+      description: 'Tomate, mozzarella y albahaca',
+      price: 180,
+      image: '/uploads/products/pizza-margarita.jpg',
+      category: 'Pizzas',
+      available: true,
+      preparationTime: 25
+    },
+    {
+      id: 4,
+      storeId: 2,
+      name: 'Pizza Pepperoni',
+      description: 'Pepperoni italiano y queso mozzarella',
+      price: 200,
+      image: '/uploads/products/pizza-pepperoni.jpg',
+      category: 'Pizzas',
+      available: true,
+      preparationTime: 25
+    },
+    {
+      id: 5,
+      storeId: 3,
+      name: 'California Roll',
+      description: 'Cangrejo, aguacate y pepino',
+      price: 120,
+      image: '/uploads/products/california-roll.jpg',
+      category: 'Rolls',
+      available: true,
+      preparationTime: 15
+    },
+    {
+      id: 6,
+      storeId: 3,
+      name: 'Sashimi Mixto',
+      description: 'Selección de pescados frescos',
+      price: 250,
+      image: '/uploads/products/sashimi.jpg',
+      category: 'Sashimi',
+      available: true,
+      preparationTime: 10
+    }
   ],
-  
-  storeCategories: [
-    'Mexicana', 'Italiana', 'Japonesa', 'China', 'Hamburguesas', 
-    'Pizza', 'Ensaladas', 'Postres', 'Café', 'Mariscos'
-  ],
-  
-  orders: [],
-  orderCounter: 1,
-  userCounter: 5,
-  storeCounter: 4,
-  productCounter: 11
+
+  orders: []
 };
 
-// Utilidades
-const generateOrderId = () => {
-  return `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`.toUpperCase();
-};
+// ============================================
+// MIDDLEWARE DE AUTENTICACIÓN
+// ============================================
 
-const calculateDistance = (lat1, lng1, lat2, lng2) => {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLng = (lng2 - lng1) * Math.PI / 180;
-  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLng/2) * Math.sin(dLng/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  return R * c;
-};
-
-const calculateDeliveryFee = (distance) => {
-  const baseFee = 30;
-  const perKmFee = 8;
-  return baseFee + (distance * perKmFee);
-};
-
-const estimateDeliveryTime = (distance) => {
-  const avgSpeed = 25;
-  const minutes = (distance / avgSpeed) * 60;
-  return Math.ceil(minutes);
-};
-
-// Middleware de autenticación
-const authenticateToken = (req, res, next) => {
+function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
@@ -294,104 +370,27 @@ const authenticateToken = (req, res, next) => {
     req.user = user;
     next();
   });
-};
-
-// ============================================
-// RUTAS FRONTEND
-// ============================================
-
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-app.get('/cliente', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'cliente.html'));
-});
-
-app.get('/conductor', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'conductor.html'));
-});
-
-app.get('/admin', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'admin.html'));
-});
-
-app.get('/register', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'register.html'));
-});
-
-app.get('/tienda', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'tienda.html'));
-});
-
-// ============================================
-// UPLOAD DE IMÁGENES
-// ============================================
-
-app.post('/api/upload', upload.single('file'), (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No se subió ningún archivo' });
-    }
-    
-    res.json({ 
-      message: 'Archivo subido exitosamente',
-      filename: req.file.filename,
-      url: `/uploads/${req.file.filename}`
-    });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al subir archivo', details: error.message });
-  }
-});
+}
 
 // ============================================
 // AUTENTICACIÓN
 // ============================================
 
-app.post('/api/auth/login', (req, res) => {
-  try {
-    const { email, password } = req.body;
-    const user = database.users.find(u => u.email === email);
-    
-    if (!user || password !== user.password) {
-      return res.status(401).json({ error: 'Credenciales inválidas' });
-    }
-
-    if (user.role === 'driver' && user.approved === false) {
-      return res.status(403).json({ error: 'Tu cuenta está pendiente de aprobación' });
-    }
-
-    const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET);
-    const { password: _, ...userWithoutPassword } = user;
-
-    res.json({ message: 'Login exitoso', token, user: userWithoutPassword });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al iniciar sesión', details: error.message });
-  }
-});
-
 app.post('/api/auth/register', (req, res) => {
   try {
-    const { email, password, name, phone, role, address, vehicle, license, inePhoto, vehiclePhoto } = req.body;
+    const { email, password, name, phone, role, vehicle, license, address } = req.body;
 
     if (!email || !password || !name || !phone || !role) {
       return res.status(400).json({ error: 'Faltan campos requeridos' });
     }
 
-    if (database.users.find(u => u.email === email)) {
-      return res.status(409).json({ error: 'El email ya está registrado' });
-    }
-
-    if (!['client', 'driver', 'store_owner'].includes(role)) {
-      return res.status(400).json({ error: 'Rol inválido' });
-    }
-
-    if (role === 'driver' && (!vehicle || !license || !inePhoto || !vehiclePhoto)) {
-      return res.status(400).json({ error: 'Conductores deben proporcionar toda la información requerida' });
+    const existingUser = database.users.find(u => u.email === email);
+    if (existingUser) {
+      return res.status(400).json({ error: 'El email ya está registrado' });
     }
 
     const newUser = {
-      id: database.userCounter++,
+      id: database.users.length + 1,
       email,
       password,
       name,
@@ -400,75 +399,113 @@ app.post('/api/auth/register', (req, res) => {
       createdAt: new Date()
     };
 
-    if (role === 'client') {
-      newUser.address = address || '';
-    }
-
     if (role === 'driver') {
       newUser.vehicle = vehicle;
       newUser.license = license;
-      newUser.inePhoto = inePhoto;
-      newUser.vehiclePhoto = vehiclePhoto;
       newUser.available = false;
       newUser.approved = false;
       newUser.currentLocation = { lat: 19.4326, lng: -99.1332 };
       newUser.rating = 5.0;
       newUser.totalDeliveries = 0;
       newUser.totalEarnings = 0;
+    } else if (role === 'client') {
+      newUser.address = address;
     }
 
     database.users.push(newUser);
 
-    if (role === 'client' || role === 'store_owner') {
-      const token = jwt.sign({ id: newUser.id, email: newUser.email, role: newUser.role }, JWT_SECRET);
-      const { password: _, ...userWithoutPassword } = newUser;
-      
-      return res.status(201).json({
-        message: 'Registro exitoso',
-        token,
-        user: userWithoutPassword
+    const token = jwt.sign(
+      { id: newUser.id, email: newUser.email, role: newUser.role },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    // Notificar al admin si es un conductor nuevo
+    if (role === 'driver') {
+      notifyRole('admin', {
+        title: 'Nuevo conductor registrado',
+        message: `${name} se ha registrado como conductor`,
+        type: 'info',
+        timestamp: new Date()
       });
     }
 
-    res.status(201).json({
-      message: 'Registro exitoso. Tu cuenta será revisada y aprobada pronto.',
-      pendingApproval: true
+    const { password: _, ...userWithoutPassword } = newUser;
+    res.status(201).json({ 
+      message: 'Usuario registrado exitosamente',
+      token,
+      user: userWithoutPassword
     });
   } catch (error) {
     res.status(500).json({ error: 'Error al registrar usuario', details: error.message });
   }
 });
 
+app.post('/api/auth/login', (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email y contraseña son requeridos' });
+    }
+
+    const user = database.users.find(u => u.email === email && u.password === password);
+
+    if (!user) {
+      return res.status(401).json({ error: 'Credenciales inválidas' });
+    }
+
+    if (user.role === 'driver' && !user.approved) {
+      return res.status(403).json({ 
+        error: 'Tu cuenta de conductor está pendiente de aprobación' 
+      });
+    }
+
+    const token = jwt.sign(
+      { id: user.id, email: user.email, role: user.role },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    const { password: _, ...userWithoutPassword } = user;
+    res.json({ 
+      message: 'Login exitoso',
+      token,
+      user: userWithoutPassword
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al iniciar sesión', details: error.message });
+  }
+});
+
+app.get('/api/auth/me', authenticateToken, (req, res) => {
+  try {
+    const user = database.users.find(u => u.id === req.user.id);
+    if (!user) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    const { password, ...userWithoutPassword } = user;
+    res.json({ user: userWithoutPassword });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener usuario', details: error.message });
+  }
+});
+
 // ============================================
-// RUTAS DE TIENDAS
+// TIENDAS
 // ============================================
 
 app.get('/api/stores', (req, res) => {
   try {
-    const { category, search, isOpen } = req.query;
-    let stores = [...database.stores];
+    const { category } = req.query;
+    let stores = database.stores;
 
-    if (category && category !== 'all') {
+    if (category) {
       stores = stores.filter(s => s.category === category);
     }
 
-    if (search) {
-      const searchLower = search.toLowerCase();
-      stores = stores.filter(s => 
-        s.name.toLowerCase().includes(searchLower) ||
-        s.description.toLowerCase().includes(searchLower)
-      );
-    }
-
-    if (isOpen === 'true') {
-      stores = stores.filter(s => s.isOpen);
-    }
-
-    res.json({ 
-      stores,
-      total: stores.length,
-      categories: database.storeCategories
-    });
+    res.json({ stores });
   } catch (error) {
     res.status(500).json({ error: 'Error al obtener tiendas', details: error.message });
   }
@@ -483,13 +520,7 @@ app.get('/api/stores/:storeId', (req, res) => {
       return res.status(404).json({ error: 'Tienda no encontrada' });
     }
 
-    const products = database.products.filter(p => p.storeId === store.id && p.available);
-
-    res.json({ 
-      store,
-      products,
-      totalProducts: products.length
-    });
+    res.json({ store });
   } catch (error) {
     res.status(500).json({ error: 'Error al obtener tienda', details: error.message });
   }
@@ -497,37 +528,41 @@ app.get('/api/stores/:storeId', (req, res) => {
 
 app.post('/api/stores', authenticateToken, upload.single('image'), (req, res) => {
   try {
-    if (!['admin', 'store_owner'].includes(req.user.role)) {
+    if (req.user.role !== 'store_owner' && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'No autorizado' });
     }
 
-    const { name, description, category, deliveryTime, deliveryFee, minOrder, location } = req.body;
-
-    if (!name || !category) {
-      return res.status(400).json({ error: 'Faltan campos requeridos' });
-    }
+    const { name, description, category, deliveryTime, deliveryFee, minOrder, address, lat, lng } = req.body;
 
     const newStore = {
-      id: database.storeCounter++,
+      id: database.stores.length + 1,
       name,
-      description: description || '',
+      description,
       category,
-      image: req.file ? `/uploads/stores/${req.file.filename}` : '/uploads/stores/default.jpg',
+      image: req.file ? `/uploads/stores/${req.file.filename}` : null,
       rating: 5.0,
-      deliveryTime: deliveryTime || '30-40 min',
-      deliveryFee: parseFloat(deliveryFee) || 35,
-      minOrder: parseFloat(minOrder) || 50,
+      deliveryTime,
+      deliveryFee: parseFloat(deliveryFee),
+      minOrder: parseFloat(minOrder),
       isOpen: true,
       ownerId: req.user.id,
-      location: location ? JSON.parse(location) : { lat: 19.4326, lng: -99.1332, address: 'Por definir' },
+      location: { lat: parseFloat(lat), lng: parseFloat(lng), address },
       createdAt: new Date()
     };
 
     database.stores.push(newStore);
 
-    res.status(201).json({
+    // Notificar a todos los clientes de nueva tienda
+    notifyRole('client', {
+      title: '¡Nueva tienda disponible!',
+      message: `${name} ahora está en la plataforma`,
+      type: 'success',
+      timestamp: new Date()
+    });
+
+    res.status(201).json({ 
       message: 'Tienda creada exitosamente',
-      store: newStore
+      store: newStore 
     });
   } catch (error) {
     res.status(500).json({ error: 'Error al crear tienda', details: error.message });
@@ -543,11 +578,11 @@ app.put('/api/stores/:storeId', authenticateToken, upload.single('image'), (req,
       return res.status(404).json({ error: 'Tienda no encontrada' });
     }
 
-    if (req.user.role !== 'admin' && store.ownerId !== req.user.id) {
+    if (store.ownerId !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'No autorizado' });
     }
 
-    const { name, description, category, deliveryTime, deliveryFee, minOrder, isOpen } = req.body;
+    const { name, description, category, deliveryTime, deliveryFee, minOrder, isOpen, address, lat, lng } = req.body;
 
     if (name) store.name = name;
     if (description) store.description = description;
@@ -555,41 +590,65 @@ app.put('/api/stores/:storeId', authenticateToken, upload.single('image'), (req,
     if (deliveryTime) store.deliveryTime = deliveryTime;
     if (deliveryFee) store.deliveryFee = parseFloat(deliveryFee);
     if (minOrder) store.minOrder = parseFloat(minOrder);
-    if (isOpen !== undefined) store.isOpen = isOpen === 'true' || isOpen === true;
+    if (typeof isOpen !== 'undefined') store.isOpen = isOpen === 'true' || isOpen === true;
     if (req.file) store.image = `/uploads/stores/${req.file.filename}`;
+    if (address || lat || lng) {
+      store.location = {
+        lat: lat ? parseFloat(lat) : store.location.lat,
+        lng: lng ? parseFloat(lng) : store.location.lng,
+        address: address || store.location.address
+      };
+    }
 
-    res.json({
+    res.json({ 
       message: 'Tienda actualizada exitosamente',
-      store
+      store 
     });
   } catch (error) {
     res.status(500).json({ error: 'Error al actualizar tienda', details: error.message });
   }
 });
 
+app.delete('/api/stores/:storeId', authenticateToken, (req, res) => {
+  try {
+    const { storeId } = req.params;
+    const storeIndex = database.stores.findIndex(s => s.id === parseInt(storeId));
+
+    if (storeIndex === -1) {
+      return res.status(404).json({ error: 'Tienda no encontrada' });
+    }
+
+    const store = database.stores[storeIndex];
+
+    if (store.ownerId !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    database.stores.splice(storeIndex, 1);
+    database.products = database.products.filter(p => p.storeId !== parseInt(storeId));
+
+    res.json({ message: 'Tienda eliminada exitosamente' });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al eliminar tienda', details: error.message });
+  }
+});
+
 // ============================================
-// RUTAS DE PRODUCTOS
+// PRODUCTOS
 // ============================================
 
 app.get('/api/stores/:storeId/products', (req, res) => {
   try {
     const { storeId } = req.params;
     const { category } = req.query;
-
+    
     let products = database.products.filter(p => p.storeId === parseInt(storeId));
 
-    if (category && category !== 'all') {
+    if (category) {
       products = products.filter(p => p.category === category);
     }
 
-    const categoriesSet = new Set(products.map(p => p.category));
-    const categories = Array.from(categoriesSet);
-
-    res.json({
-      products,
-      categories,
-      total: products.length
-    });
+    res.json({ products });
   } catch (error) {
     res.status(500).json({ error: 'Error al obtener productos', details: error.message });
   }
@@ -597,38 +656,38 @@ app.get('/api/stores/:storeId/products', (req, res) => {
 
 app.post('/api/products', authenticateToken, upload.single('image'), (req, res) => {
   try {
-    const { storeId, name, description, price, category } = req.body;
+    if (req.user.role !== 'store_owner' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
 
+    const { storeId, name, description, price, category, preparationTime } = req.body;
+    
     const store = database.stores.find(s => s.id === parseInt(storeId));
     if (!store) {
       return res.status(404).json({ error: 'Tienda no encontrada' });
     }
 
-    if (req.user.role !== 'admin' && store.ownerId !== req.user.id) {
-      return res.status(403).json({ error: 'No autorizado' });
-    }
-
-    if (!name || !price) {
-      return res.status(400).json({ error: 'Faltan campos requeridos' });
+    if (store.ownerId !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'No autorizado para esta tienda' });
     }
 
     const newProduct = {
-      id: database.productCounter++,
+      id: database.products.length + 1,
       storeId: parseInt(storeId),
       name,
-      description: description || '',
+      description,
       price: parseFloat(price),
-      image: req.file ? `/uploads/products/${req.file.filename}` : '/uploads/products/default.jpg',
-      category: category || 'General',
+      image: req.file ? `/uploads/products/${req.file.filename}` : null,
+      category,
       available: true,
-      createdAt: new Date()
+      preparationTime: parseInt(preparationTime) || 15
     };
 
     database.products.push(newProduct);
 
-    res.status(201).json({
+    res.status(201).json({ 
       message: 'Producto creado exitosamente',
-      product: newProduct
+      product: newProduct 
     });
   } catch (error) {
     res.status(500).json({ error: 'Error al crear producto', details: error.message });
@@ -645,22 +704,23 @@ app.put('/api/products/:productId', authenticateToken, upload.single('image'), (
     }
 
     const store = database.stores.find(s => s.id === product.storeId);
-    if (req.user.role !== 'admin' && store.ownerId !== req.user.id) {
+    if (store.ownerId !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'No autorizado' });
     }
 
-    const { name, description, price, category, available } = req.body;
+    const { name, description, price, category, available, preparationTime } = req.body;
 
     if (name) product.name = name;
     if (description) product.description = description;
     if (price) product.price = parseFloat(price);
     if (category) product.category = category;
-    if (available !== undefined) product.available = available === 'true' || available === true;
+    if (typeof available !== 'undefined') product.available = available === 'true' || available === true;
+    if (preparationTime) product.preparationTime = parseInt(preparationTime);
     if (req.file) product.image = `/uploads/products/${req.file.filename}`;
 
-    res.json({
+    res.json({ 
       message: 'Producto actualizado exitosamente',
-      product
+      product 
     });
   } catch (error) {
     res.status(500).json({ error: 'Error al actualizar producto', details: error.message });
@@ -679,12 +739,11 @@ app.delete('/api/products/:productId', authenticateToken, (req, res) => {
     const product = database.products[productIndex];
     const store = database.stores.find(s => s.id === product.storeId);
 
-    if (req.user.role !== 'admin' && store.ownerId !== req.user.id) {
+    if (store.ownerId !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'No autorizado' });
     }
 
     database.products.splice(productIndex, 1);
-
     res.json({ message: 'Producto eliminado exitosamente' });
   } catch (error) {
     res.status(500).json({ error: 'Error al eliminar producto', details: error.message });
@@ -692,23 +751,22 @@ app.delete('/api/products/:productId', authenticateToken, (req, res) => {
 });
 
 // ============================================
-// RUTAS DE PEDIDOS (CON FLUJO CORREGIDO)
+// PEDIDOS
 // ============================================
 
 app.post('/api/orders', authenticateToken, (req, res) => {
   try {
-    const { storeId, items, deliveryAddress, paymentMethod, notes } = req.body;
-    const userId = req.user.id;
-
-    if (!storeId) {
-      return res.status(400).json({ error: 'Debe especificar una tienda' });
+    if (req.user.role !== 'client') {
+      return res.status(403).json({ error: 'Solo clientes pueden crear pedidos' });
     }
+
+    const { storeId, items, deliveryAddress, paymentMethod, notes } = req.body;
 
     if (!items || items.length === 0) {
-      return res.status(400).json({ error: 'El pedido debe tener al menos un item' });
+      return res.status(400).json({ error: 'El pedido debe tener al menos un producto' });
     }
 
-    const store = database.stores.find(s => s.id === parseInt(storeId));
+    const store = database.stores.find(s => s.id === storeId);
     if (!store) {
       return res.status(404).json({ error: 'Tienda no encontrada' });
     }
@@ -720,415 +778,114 @@ app.post('/api/orders', authenticateToken, (req, res) => {
     let subtotal = 0;
     const orderItems = items.map(item => {
       const product = database.products.find(p => p.id === item.productId);
-      if (!product || !product.available) {
-        throw new Error(`Producto no disponible: ${item.productId}`);
+      if (!product) {
+        throw new Error(`Producto ${item.productId} no encontrado`);
       }
-      subtotal += product.price * item.quantity;
+      if (!product.available) {
+        throw new Error(`Producto ${product.name} no disponible`);
+      }
+      const itemTotal = product.price * item.quantity;
+      subtotal += itemTotal;
       return {
         productId: product.id,
         name: product.name,
         price: product.price,
         quantity: item.quantity,
-        notes: item.notes || ''
+        total: itemTotal
       };
     });
 
     if (subtotal < store.minOrder) {
       return res.status(400).json({ 
-        error: `El pedido mínimo es de ${store.minOrder}`,
+        error: `El pedido mínimo es de $${store.minOrder}`,
         minOrder: store.minOrder,
         currentTotal: subtotal
       });
     }
 
-    const availableDrivers = database.users.filter(u => 
-      u.role === 'driver' && u.available && u.approved && u.currentLocation
-    );
-
-    if (availableDrivers.length === 0) {
-      return res.status(404).json({ error: 'No hay conductores disponibles' });
-    }
-
-    let nearestDriver = availableDrivers[0];
-    let minDistance = calculateDistance(
-      store.location.lat,
-      store.location.lng,
-      nearestDriver.currentLocation.lat,
-      nearestDriver.currentLocation.lng
-    );
-
-    availableDrivers.forEach(driver => {
-      const distance = calculateDistance(
-        store.location.lat,
-        store.location.lng,
-        driver.currentLocation.lat,
-        driver.currentLocation.lng
-      );
-      if (distance < minDistance) {
-        minDistance = distance;
-        nearestDriver = driver;
-      }
-    });
-
-    const deliveryFee = store.deliveryFee || calculateDeliveryFee(minDistance);
-    const serviceFee = SERVICE_FEE;
-    const commission = deliveryFee * COMMISSION_RATE;
-    const driverEarnings = deliveryFee - commission;
-    const platformEarnings = commission + serviceFee;
-    const total = subtotal + deliveryFee + serviceFee;
-    const estimatedTime = estimateDeliveryTime(minDistance);
+    const deliveryFee = store.deliveryFee;
+    const total = subtotal + deliveryFee;
+    const commission = subtotal * COMMISSION_RATE;
 
     const newOrder = {
-      id: generateOrderId(),
-      orderNumber: database.orderCounter++,
-      customerId: userId,
-      customer: database.users.find(u => u.id === userId),
-      driverId: nearestDriver.id,
-      driver: nearestDriver,
-      storeId: store.id,
-      store: {
-        id: store.id,
-        name: store.name,
-        image: store.image,
-        location: store.location
-      },
+      id: database.orders.length + 1,
+      customerId: req.user.id,
+      storeId,
+      storeName: store.name,
       items: orderItems,
-      deliveryAddress,
-      paymentMethod: paymentMethod || 'cash',
-      notes: notes || '',
-      status: 'pending',
       subtotal,
       deliveryFee,
-      serviceFee,
+      serviceFee: SERVICE_FEE,
       commission,
-      driverEarnings,
-      platformEarnings,
       total,
-      distance: minDistance,
-      estimatedTime,
-      statusHistory: [
-        { 
-          status: 'pending', 
-          timestamp: new Date(), 
-          note: 'Pedido creado, esperando aceptación de tienda',
-          updatedBy: userId,
-          updatedByRole: 'client'
-        }
-      ],
+      status: ORDER_STATES.PENDING,
+      deliveryAddress,
+      paymentMethod,
+      notes: notes || '',
       createdAt: new Date(),
-      updatedAt: new Date()
+      statusHistory: [
+        {
+          status: ORDER_STATES.PENDING,
+          timestamp: new Date(),
+          note: 'Pedido creado'
+        }
+      ]
     };
 
     database.orders.push(newOrder);
 
-    // Notificar a la tienda
-    if (store.ownerId) {
-      io.emit(`store:${store.ownerId}`, {
-        type: 'new_order',
-        message: '🔔 Nuevo pedido recibido',
-        order: newOrder,
-        sound: 'notification'
-      });
-    }
-
-    // Notificar al conductor (informativo, no puede hacer nada aún)
-    io.emit(`driver:${nearestDriver.id}`, {
-      type: 'new_order_assigned',
-      message: 'Se te asignó un pedido. Esperando aceptación de tienda.',
-      order: newOrder
+    // 🔔 NOTIFICACIONES: Nuevo pedido
+    // Notificar al dueño de la tienda
+    notifyUser(store.ownerId, {
+      title: '¡Nuevo pedido!',
+      message: `Pedido #${newOrder.id} - $${total.toFixed(2)}`,
+      type: 'success',
+      orderId: newOrder.id,
+      timestamp: new Date()
     });
 
-    res.status(201).json({
+    // Notificar al admin
+    notifyRole('admin', {
+      title: 'Nuevo pedido en plataforma',
+      message: `Pedido #${newOrder.id} en ${store.name}`,
+      type: 'info',
+      orderId: newOrder.id,
+      timestamp: new Date()
+    });
+
+    res.status(201).json({ 
       message: 'Pedido creado exitosamente',
-      order: newOrder
+      order: newOrder 
     });
   } catch (error) {
     res.status(500).json({ error: 'Error al crear pedido', details: error.message });
   }
 });
 
-// ============================================
-// ACTUALIZAR ESTADO DE PEDIDO (LÓGICA CORREGIDA)
-// ============================================
-
-app.put('/api/orders/:orderId/status', authenticateToken, (req, res) => {
-  try {
-    const { orderId } = req.params;
-    const { status, note } = req.body;
-    const userId = req.user.id;
-    const userRole = req.user.role;
-
-    const order = database.orders.find(o => o.id === orderId);
-    if (!order) {
-      return res.status(404).json({ error: 'Pedido no encontrado' });
-    }
-
-    // VALIDACIÓN DE PERMISOS POR ROL
-    if (userRole === 'client') {
-      if (status !== 'cancelled' || order.status !== 'pending') {
-        return res.status(403).json({ error: 'Solo puedes cancelar pedidos pendientes.' });
-      }
-      if (order.customerId !== userId) {
-        return res.status(403).json({ error: 'Este no es tu pedido' });
-      }
-    } else if (userRole === 'store_owner') {
-      const store = database.stores.find(s => s.id === order.storeId);
-      if (!store || store.ownerId !== userId) {
-        return res.status(403).json({ error: 'No eres el dueño de esta tienda' });
-      }
-      
-      const allowedStates = ['pending', 'accepted', 'preparing'];
-      if (!allowedStates.includes(order.status)) {
-        return res.status(403).json({ 
-          error: `No puedes modificar el pedido en estado "${order.status}". El conductor está encargado de la entrega.`,
-          currentStatus: order.status
-        });
-      }
-      
-      if (order.status === 'pending' && status !== 'accepted' && status !== 'cancelled') {
-        return res.status(400).json({ error: 'Debes aceptar o cancelar el pedido' });
-      }
-      if (order.status === 'accepted' && status !== 'preparing' && status !== 'cancelled') {
-        return res.status(400).json({ error: 'Debes comenzar la preparación' });
-      }
-      if (order.status === 'preparing' && status !== 'ready' && status !== 'cancelled') {
-        return res.status(400).json({ error: 'Debes marcar el pedido como listo' });
-      }
-      
-    } else if (userRole === 'driver') {
-      if (order.driverId !== userId) {
-        return res.status(403).json({ error: 'No eres el conductor asignado' });
-      }
-      
-      const allowedStates = ['ready', 'picked_up', 'on_way'];
-      if (!allowedStates.includes(order.status)) {
-        return res.status(403).json({ 
-          error: `No puedes modificar el pedido en estado "${order.status}". Espera a que la tienda lo prepare.`,
-          currentStatus: order.status
-        });
-      }
-      
-      if (order.status === 'ready' && status !== 'picked_up') {
-        return res.status(400).json({ error: 'Debes confirmar que recogiste el pedido' });
-      }
-      if (order.status === 'picked_up' && status !== 'on_way') {
-        return res.status(400).json({ error: 'Debes marcar que estás en camino' });
-      }
-      if (order.status === 'on_way' && status !== 'delivered') {
-        return res.status(400).json({ error: 'Debes marcar el pedido como entregado' });
-      }
-    }
-
-    const validStatuses = Object.values(ORDER_STATES);
-    if (!validStatuses.includes(status)) {
-      return res.status(400).json({ error: 'Estado inválido' });
-    }
-
-    const currentStatePermissions = STATE_PERMISSIONS[order.status];
-    if (!currentStatePermissions.nextStates.includes(status)) {
-      return res.status(400).json({ 
-        error: 'Transición de estado inválida',
-        currentStatus: order.status,
-        requestedStatus: status,
-        allowedNextStates: currentStatePermissions.nextStates
-      });
-    }
-
-    // ACTUALIZAR ESTADO
-    const previousStatus = order.status;
-    order.status = status;
-    order.updatedAt = new Date();
-    order.statusHistory.push({
-      status,
-      previousStatus,
-      timestamp: new Date(),
-      note: note || '',
-      updatedBy: userId,
-      updatedByRole: userRole
-    });
-
-    // ACCIONES POR ESTADO
-    if (status === 'accepted') {
-      order.acceptedAt = new Date();
-      order.acceptedBy = userId;
-      
-      io.emit(`client:${order.customerId}`, {
-        type: 'order_accepted',
-        message: '✓ Tu pedido fue aceptado por la tienda',
-        order: order
-      });
-      
-      io.emit(`driver:${order.driverId}`, {
-        type: 'order_accepted',
-        message: 'Tienda aceptó el pedido. Esperando preparación.',
-        order: order
-      });
-    }
-
-    if (status === 'preparing') {
-      order.preparingAt = new Date();
-      
-      io.emit(`client:${order.customerId}`, {
-        type: 'order_preparing',
-        message: '👨‍🍳 Tu pedido está siendo preparado',
-        order: order
-      });
-      
-      io.emit(`driver:${order.driverId}`, {
-        type: 'order_preparing',
-        message: 'La tienda está preparando el pedido.',
-        order: order
-      });
-    }
-
-    if (status === 'ready') {
-      order.readyAt = new Date();
-      
-      io.emit(`driver:${order.driverId}`, {
-        type: 'order_ready',
-        message: '📦 Pedido listo para recoger en ' + order.store.name,
-        order: order,
-        sound: 'notification',
-        priority: 'high'
-      });
-      
-      io.emit(`client:${order.customerId}`, {
-        type: 'order_ready',
-        message: '📦 Tu pedido está listo, esperando al conductor',
-        order: order
-      });
-    }
-
-    if (status === 'picked_up') {
-      order.pickedUpAt = new Date();
-      
-      const driver = database.users.find(u => u.id === order.driverId);
-      if (driver) {
-        driver.available = false;
-      }
-      
-      io.emit(`client:${order.customerId}`, {
-        type: 'order_picked_up',
-        message: `🚗 ${driver?.name} recogió tu pedido`,
-        order: order
-      });
-      
-      const store = database.stores.find(s => s.id === order.storeId);
-      if (store && store.ownerId) {
-        io.emit(`store:${store.ownerId}`, {
-          type: 'order_picked_up',
-          message: 'Conductor recogió el pedido #' + order.orderNumber,
-          order: order
-        });
-      }
-    }
-
-    if (status === 'on_way') {
-      order.onWayAt = new Date();
-      
-      io.emit(`client:${order.customerId}`, {
-        type: 'order_on_way',
-        message: '🛵 Tu pedido está en camino',
-        order: order
-      });
-    }
-
-    if (status === 'delivered') {
-      order.deliveredAt = new Date();
-      
-      const driver = database.users.find(u => u.id === order.driverId);
-      if (driver) {
-        driver.totalDeliveries += 1;
-        driver.totalEarnings += order.driverEarnings;
-        driver.available = true;
-      }
-      
-      io.emit(`client:${order.customerId}`, {
-        type: 'order_delivered',
-        message: '✅ ¡Tu pedido ha sido entregado! ¡Buen provecho!',
-        order: order
-      });
-      
-      const store = database.stores.find(s => s.id === order.storeId);
-      if (store && store.ownerId) {
-        io.emit(`store:${store.ownerId}`, {
-          type: 'order_delivered',
-          message: 'Pedido #' + order.orderNumber + ' entregado',
-          order: order
-        });
-      }
-    }
-
-    if (status === 'cancelled') {
-      order.cancelledAt = new Date();
-      order.cancelledBy = userId;
-      order.cancelledReason = note || 'Sin razón';
-      
-      if (['picked_up', 'on_way'].includes(previousStatus)) {
-        const driver = database.users.find(u => u.id === order.driverId);
-        if (driver) {
-          driver.available = true;
-        }
-      }
-      
-      io.emit(`client:${order.customerId}`, {
-        type: 'order_cancelled',
-        message: '❌ Pedido cancelado: ' + order.cancelledReason,
-        order: order
-      });
-      
-      if (order.driverId) {
-        io.emit(`driver:${order.driverId}`, {
-          type: 'order_cancelled',
-          message: 'Pedido #' + order.orderNumber + ' cancelado',
-          order: order
-        });
-      }
-      
-      const store = database.stores.find(s => s.id === order.storeId);
-      if (store && store.ownerId && userId !== store.ownerId) {
-        io.emit(`store:${store.ownerId}`, {
-          type: 'order_cancelled',
-          message: 'Pedido #' + order.orderNumber + ' cancelado',
-          order: order
-        });
-      }
-    }
-
-    res.json({
-      success: true,
-      message: 'Estado actualizado exitosamente',
-      order: order,
-      previousStatus: previousStatus,
-      newStatus: status
-    });
-    
-  } catch (error) {
-    console.error('Error al actualizar estado:', error);
-    res.status(500).json({ error: 'Error al actualizar estado', details: error.message });
-  }
-});
-
 app.get('/api/orders', authenticateToken, (req, res) => {
   try {
-    const userId = req.user.id;
-    const userRole = req.user.role;
+    const { status } = req.query;
+    let orders = [];
 
-    let orders;
-    if (userRole === 'client') {
-      orders = database.orders.filter(o => o.customerId === userId);
-    } else if (userRole === 'driver') {
-      orders = database.orders.filter(o => o.driverId === userId);
-    } else if (userRole === 'store_owner') {
-      const userStores = database.stores.filter(s => s.ownerId === userId).map(s => s.id);
-      orders = database.orders.filter(o => userStores.includes(o.storeId));
-    } else {
+    if (req.user.role === 'client') {
+      orders = database.orders.filter(o => o.customerId === req.user.id);
+    } else if (req.user.role === 'driver') {
+      orders = database.orders.filter(o => o.driverId === req.user.id || o.status === ORDER_STATES.READY);
+    } else if (req.user.role === 'store_owner') {
+      const userStores = database.stores.filter(s => s.ownerId === req.user.id);
+      const storeIds = userStores.map(s => s.id);
+      orders = database.orders.filter(o => storeIds.includes(o.storeId));
+    } else if (req.user.role === 'admin') {
       orders = database.orders;
+    }
+
+    if (status) {
+      orders = orders.filter(o => o.status === status);
     }
 
     orders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-    res.json({ orders, total: orders.length });
+    res.json({ orders });
   } catch (error) {
     res.status(500).json({ error: 'Error al obtener pedidos', details: error.message });
   }
@@ -1137,20 +894,21 @@ app.get('/api/orders', authenticateToken, (req, res) => {
 app.get('/api/orders/:orderId', authenticateToken, (req, res) => {
   try {
     const { orderId } = req.params;
-    const order = database.orders.find(o => o.id === orderId);
+    const order = database.orders.find(o => o.id === parseInt(orderId));
 
     if (!order) {
       return res.status(404).json({ error: 'Pedido no encontrado' });
     }
 
-    const userId = req.user.id;
-    const userRole = req.user.role;
+    const hasAccess = 
+      req.user.role === 'admin' ||
+      order.customerId === req.user.id ||
+      order.driverId === req.user.id ||
+      (req.user.role === 'store_owner' && 
+       database.stores.find(s => s.id === order.storeId)?.ownerId === req.user.id);
 
-    if (userRole !== 'admin' && order.customerId !== userId && order.driverId !== userId) {
-      const store = database.stores.find(s => s.id === order.storeId);
-      if (!store || store.ownerId !== userId) {
-        return res.status(403).json({ error: 'No autorizado' });
-      }
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'No tienes acceso a este pedido' });
     }
 
     res.json({ order });
@@ -1159,21 +917,362 @@ app.get('/api/orders/:orderId', authenticateToken, (req, res) => {
   }
 });
 
-// ============================================
-// USUARIO
-// ============================================
-
-app.get('/api/users/profile', authenticateToken, (req, res) => {
+app.put('/api/orders/:orderId/status', authenticateToken, (req, res) => {
   try {
-    const user = database.users.find(u => u.id === req.user.id);
-    if (!user) {
-      return res.status(404).json({ error: 'Usuario no encontrado' });
+    const { orderId } = req.params;
+    const { status, note } = req.body;
+    
+    const order = database.orders.find(o => o.id === parseInt(orderId));
+
+    if (!order) {
+      return res.status(404).json({ error: 'Pedido no encontrado' });
     }
 
-    const { password, ...userWithoutPassword } = user;
-    res.json({ user: userWithoutPassword });
+    const currentStatePermissions = STATE_PERMISSIONS[order.status];
+
+    if (!currentStatePermissions.canUpdate.includes(req.user.role)) {
+      return res.status(403).json({ 
+        error: `Solo ${currentStatePermissions.canUpdate.join(' o ')} pueden actualizar este estado` 
+      });
+    }
+
+    if (!currentStatePermissions.nextStates.includes(status)) {
+      return res.status(400).json({ 
+        error: `No se puede cambiar de ${order.status} a ${status}`,
+        allowedStates: currentStatePermissions.nextStates
+      });
+    }
+
+    const oldStatus = order.status;
+    order.status = status;
+    order.statusHistory.push({
+      status,
+      timestamp: new Date(),
+      note: note || '',
+      updatedBy: req.user.id
+    });
+
+    // Actualizar campos específicos según el estado
+    if (status === ORDER_STATES.PICKED_UP) {
+      order.pickedUpAt = new Date();
+    } else if (status === ORDER_STATES.DELIVERED) {
+      order.deliveredAt = new Date();
+      
+      const driver = database.users.find(u => u.id === order.driverId);
+      if (driver) {
+        driver.totalDeliveries += 1;
+        driver.totalEarnings += order.driverEarnings;
+      }
+
+      order.platformEarnings = order.commission + order.serviceFee;
+    } else if (status === ORDER_STATES.ACCEPTED) {
+      order.acceptedAt = new Date();
+    } else if (status === ORDER_STATES.READY) {
+      order.readyAt = new Date();
+    }
+
+    // 🔔 NOTIFICACIONES: Cambio de estado
+    const store = database.stores.find(s => s.id === order.storeId);
+    const customer = database.users.find(u => u.id === order.customerId);
+    
+    // Notificar al cliente siempre
+    notifyUser(order.customerId, {
+      title: 'Actualización de pedido',
+      message: getStatusMessage(status, order),
+      type: 'info',
+      orderId: order.id,
+      status: status,
+      timestamp: new Date()
+    });
+
+    // Notificaciones específicas por estado
+    if (status === ORDER_STATES.ACCEPTED) {
+      // Notificar al admin
+      notifyRole('admin', {
+        title: 'Pedido aceptado',
+        message: `Pedido #${order.id} aceptado por ${store.name}`,
+        type: 'info',
+        orderId: order.id,
+        timestamp: new Date()
+      });
+    } 
+    else if (status === ORDER_STATES.READY) {
+      // Notificar a todos los conductores disponibles
+      notifyRole('driver', {
+        title: '¡Nuevo pedido disponible!',
+        message: `Pedido #${order.id} listo para recoger en ${store.name}`,
+        type: 'success',
+        orderId: order.id,
+        timestamp: new Date()
+      });
+      
+      // Notificar al admin
+      notifyRole('admin', {
+        title: 'Pedido listo',
+        message: `Pedido #${order.id} listo para entrega`,
+        type: 'info',
+        orderId: order.id,
+        timestamp: new Date()
+      });
+    }
+    else if (status === ORDER_STATES.PICKED_UP) {
+      // Notificar a la tienda
+      if (store) {
+        notifyUser(store.ownerId, {
+          title: 'Pedido recogido',
+          message: `Pedido #${order.id} recogido por el conductor`,
+          type: 'info',
+          orderId: order.id,
+          timestamp: new Date()
+        });
+      }
+    }
+    else if (status === ORDER_STATES.DELIVERED) {
+      // Notificar a la tienda
+      if (store) {
+        notifyUser(store.ownerId, {
+          title: 'Pedido entregado',
+          message: `Pedido #${order.id} entregado exitosamente`,
+          type: 'success',
+          orderId: order.id,
+          timestamp: new Date()
+        });
+      }
+
+      // Notificar al conductor
+      if (order.driverId) {
+        notifyUser(order.driverId, {
+          title: 'Entrega completada',
+          message: `Ganaste $${order.driverEarnings.toFixed(2)} por esta entrega`,
+          type: 'success',
+          orderId: order.id,
+          timestamp: new Date()
+        });
+      }
+
+      // Notificar al admin
+      notifyRole('admin', {
+        title: 'Pedido completado',
+        message: `Pedido #${order.id} entregado - Ganancia: $${order.platformEarnings.toFixed(2)}`,
+        type: 'success',
+        orderId: order.id,
+        timestamp: new Date()
+      });
+    }
+    else if (status === ORDER_STATES.CANCELLED) {
+      // Notificar a todos los involucrados
+      const usersToNotify = [order.customerId];
+      if (store) usersToNotify.push(store.ownerId);
+      if (order.driverId) usersToNotify.push(order.driverId);
+
+      notifyMultiple(usersToNotify, {
+        title: 'Pedido cancelado',
+        message: `El pedido #${order.id} ha sido cancelado`,
+        type: 'warning',
+        orderId: order.id,
+        timestamp: new Date()
+      });
+
+      // Notificar al admin
+      notifyRole('admin', {
+        title: 'Pedido cancelado',
+        message: `Pedido #${order.id} cancelado en estado ${oldStatus}`,
+        type: 'warning',
+        orderId: order.id,
+        timestamp: new Date()
+      });
+    }
+
+    res.json({ 
+      message: 'Estado actualizado exitosamente',
+      order 
+    });
   } catch (error) {
-    res.status(500).json({ error: 'Error al obtener perfil', details: error.message });
+    res.status(500).json({ error: 'Error al actualizar estado', details: error.message });
+  }
+});
+
+// Función auxiliar para mensajes de estado
+function getStatusMessage(status, order) {
+  const messages = {
+    'accepted': 'Tu pedido ha sido aceptado y está siendo preparado',
+    'preparing': 'Tu pedido está en preparación',
+    'ready': 'Tu pedido está listo y esperando al conductor',
+    'picked_up': 'El conductor ha recogido tu pedido',
+    'on_way': 'Tu pedido está en camino',
+    'delivered': '¡Tu pedido ha sido entregado!',
+    'cancelled': 'Tu pedido ha sido cancelado'
+  };
+  return messages[status] || 'Estado del pedido actualizado';
+}
+
+app.put('/api/orders/:orderId/assign', authenticateToken, (req, res) => {
+  try {
+    if (req.user.role !== 'driver') {
+      return res.status(403).json({ error: 'Solo conductores pueden asignarse pedidos' });
+    }
+
+    const { orderId } = req.params;
+    const order = database.orders.find(o => o.id === parseInt(orderId));
+
+    if (!order) {
+      return res.status(404).json({ error: 'Pedido no encontrado' });
+    }
+
+    if (order.status !== ORDER_STATES.READY) {
+      return res.status(400).json({ error: 'El pedido no está listo para ser recogido' });
+    }
+
+    if (order.driverId) {
+      return res.status(400).json({ error: 'El pedido ya tiene un conductor asignado' });
+    }
+
+    const driver = database.users.find(u => u.id === req.user.id);
+    if (!driver.approved || !driver.available) {
+      return res.status(403).json({ error: 'No estás disponible para tomar pedidos' });
+    }
+
+    order.driverId = req.user.id;
+    order.driverName = driver.name;
+    order.assignedAt = new Date();
+    
+    const deliveryDistance = 5;
+    const driverEarnings = (order.deliveryFee * 0.7) + (deliveryDistance * 5);
+    order.driverEarnings = driverEarnings;
+
+    // 🔔 NOTIFICACIONES: Conductor asignado
+    const store = database.stores.find(s => s.id === order.storeId);
+
+    // Notificar al cliente
+    notifyUser(order.customerId, {
+      title: 'Conductor asignado',
+      message: `${driver.name} recogerá tu pedido`,
+      type: 'info',
+      orderId: order.id,
+      timestamp: new Date()
+    });
+
+    // Notificar a la tienda
+    if (store) {
+      notifyUser(store.ownerId, {
+        title: 'Conductor asignado',
+        message: `${driver.name} recogerá el pedido #${order.id}`,
+        type: 'info',
+        orderId: order.id,
+        timestamp: new Date()
+      });
+    }
+
+    // Notificar al admin
+    notifyRole('admin', {
+      title: 'Pedido asignado',
+      message: `Pedido #${order.id} asignado a ${driver.name}`,
+      type: 'info',
+      orderId: order.id,
+      timestamp: new Date()
+    });
+
+    res.json({ 
+      message: 'Pedido asignado exitosamente',
+      order,
+      earnings: driverEarnings
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al asignar pedido', details: error.message });
+  }
+});
+
+// ============================================
+// CONDUCTORES
+// ============================================
+
+app.get('/api/drivers', authenticateToken, (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    const drivers = database.users
+      .filter(u => u.role === 'driver')
+      .map(({ password, ...driver }) => driver);
+
+    res.json({ drivers });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener conductores', details: error.message });
+  }
+});
+
+app.get('/api/drivers/available', (req, res) => {
+  try {
+    const drivers = database.users
+      .filter(u => u.role === 'driver' && u.available && u.approved)
+      .map(({ password, email, ...driver }) => ({
+        ...driver,
+        activeOrders: database.orders.filter(o => 
+          o.driverId === driver.id && 
+          !['delivered', 'cancelled'].includes(o.status)
+        ).length
+      }));
+
+    res.json({ drivers });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener conductores', details: error.message });
+  }
+});
+
+app.put('/api/drivers/:driverId/availability', authenticateToken, (req, res) => {
+  try {
+    const { driverId } = req.params;
+    const { available } = req.body;
+
+    if (req.user.id !== parseInt(driverId) && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    const driver = database.users.find(u => u.id === parseInt(driverId) && u.role === 'driver');
+
+    if (!driver) {
+      return res.status(404).json({ error: 'Conductor no encontrado' });
+    }
+
+    if (!driver.approved) {
+      return res.status(403).json({ error: 'Tu cuenta aún no ha sido aprobada' });
+    }
+
+    driver.available = available;
+
+    res.json({ 
+      message: `Estado cambiado a ${available ? 'disponible' : 'no disponible'}`,
+      driver: { id: driver.id, available: driver.available }
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al actualizar disponibilidad', details: error.message });
+  }
+});
+
+app.put('/api/drivers/:driverId/location', authenticateToken, (req, res) => {
+  try {
+    const { driverId } = req.params;
+    const { lat, lng } = req.body;
+
+    if (req.user.id !== parseInt(driverId)) {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    const driver = database.users.find(u => u.id === parseInt(driverId) && u.role === 'driver');
+
+    if (!driver) {
+      return res.status(404).json({ error: 'Conductor no encontrado' });
+    }
+
+    driver.currentLocation = { lat, lng };
+
+    res.json({ 
+      message: 'Ubicación actualizada',
+      location: driver.currentLocation
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al actualizar ubicación', details: error.message });
   }
 });
 
@@ -1259,6 +1358,14 @@ app.put('/api/admin/drivers/:driverId/approve', authenticateToken, (req, res) =>
     driver.approved = true;
     driver.available = true;
 
+    // 🔔 NOTIFICACIÓN: Conductor aprobado
+    notifyUser(driver.id, {
+      title: '¡Cuenta aprobada!',
+      message: 'Tu cuenta de conductor ha sido aprobada. Ya puedes comenzar a tomar pedidos.',
+      type: 'success',
+      timestamp: new Date()
+    });
+
     res.json({
       message: 'Conductor aprobado',
       driver: { id: driver.id, name: driver.name, email: driver.email, approved: true }
@@ -1280,6 +1387,16 @@ app.delete('/api/admin/drivers/:driverId/reject', authenticateToken, (req, res) 
     if (driverIndex === -1) {
       return res.status(404).json({ error: 'Conductor no encontrado' });
     }
+
+    const driver = database.users[driverIndex];
+
+    // 🔔 NOTIFICACIÓN: Conductor rechazado
+    notifyUser(driver.id, {
+      title: 'Solicitud rechazada',
+      message: 'Tu solicitud de conductor no ha sido aprobada. Contacta con soporte para más información.',
+      type: 'warning',
+      timestamp: new Date()
+    });
 
     database.users.splice(driverIndex, 1);
     res.json({ message: 'Conductor rechazado' });
@@ -1349,18 +1466,28 @@ app.get('/api/stats', authenticateToken, (req, res) => {
 });
 
 // ============================================
-// WEBSOCKET
+// WEBSOCKET - CONSOLIDADO
 // ============================================
 
 io.on('connection', (socket) => {
-  console.log('Cliente conectado:', socket.id);
+  console.log('🔌 Cliente conectado:', socket.id);
 
+  // Registrar usuario conectado
+  socket.on('register', (data) => {
+    const { userId } = data;
+    userSockets.set(userId.toString(), socket.id);
+    console.log(`✅ Usuario ${userId} registrado con socket ${socket.id}`);
+  });
+
+  // Suscripción por rol
   socket.on('subscribe', (data) => {
     const { userId, role } = data;
     socket.join(`${role}:${userId}`);
-    console.log(`Usuario ${userId} (${role}) suscrito`);
+    userSockets.set(userId.toString(), socket.id);
+    console.log(`📡 Usuario ${userId} (${role}) suscrito`);
   });
 
+  // Actualización de ubicación del conductor
   socket.on('update_location', (data) => {
     const { driverId, lat, lng } = data;
     const driver = database.users.find(u => u.id === driverId);
@@ -1370,8 +1497,17 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Desconexión
   socket.on('disconnect', () => {
-    console.log('Cliente desconectado:', socket.id);
+    // Eliminar del mapa de usuarios conectados
+    for (const [userId, socketId] of userSockets.entries()) {
+      if (socketId === socket.id) {
+        userSockets.delete(userId);
+        console.log(`❌ Usuario ${userId} desconectado`);
+        break;
+      }
+    }
+    console.log('🔌 Cliente desconectado:', socket.id);
   });
 });
 
@@ -1386,7 +1522,8 @@ app.get('/health', (req, res) => {
     uptime: process.uptime(),
     stores: database.stores.length,
     products: database.products.length,
-    orders: database.orders.length
+    orders: database.orders.length,
+    connectedUsers: userSockets.size
   });
 });
 
@@ -1399,24 +1536,35 @@ app.use((req, res) => {
 // ============================================
 
 server.listen(PORT, () => {
-  console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
-  console.log(`📡 WebSocket habilitado`);
-  console.log(`💰 Comisión: ${COMMISSION_RATE * 100}% | Fee: ${SERVICE_FEE}`);
-  console.log(`🏪 Tiendas: ${database.stores.length} | Productos: ${database.products.length}`);
-  console.log(`📋 Estados de pedidos:`);
-  console.log(`   1. PENDING → TIENDA acepta`);
-  console.log(`   2. ACCEPTED → TIENDA prepara`);
-  console.log(`   3. PREPARING → TIENDA marca listo`);
-  console.log(`   4. READY → CONDUCTOR recoge`);
-  console.log(`   5. PICKED_UP → CONDUCTOR en camino`);
-  console.log(`   6. ON_WAY → CONDUCTOR entrega`);
-  console.log(`   7. DELIVERED → ✅ Completado`);
-  console.log(`\n🌐 URLs disponibles:`);
-  console.log(`   / → Login`);
-  console.log(`   /cliente → Panel Cliente`);
-  console.log(`   /conductor → Panel Conductor`);
-  console.log(`   /admin → Panel Admin`);
-  console.log(`   /tienda → Panel Tienda`);
+  console.log(`\n${'='.repeat(60)}`);
+  console.log(`🚀 SERVIDOR DE DELIVERY INICIADO`);
+  console.log(`${'='.repeat(60)}`);
+  console.log(`📍 Puerto: ${PORT}`);
+  console.log(`📡 WebSocket: Habilitado`);
+  console.log(`🔔 Notificaciones: Activas`);
+  console.log(`💰 Comisión: ${COMMISSION_RATE * 100}% | Fee de servicio: $${SERVICE_FEE}`);
+  console.log(`🏪 Tiendas: ${database.stores.length} | 📦 Productos: ${database.products.length}`);
+  console.log(`\n📋 FLUJO DE ESTADOS DE PEDIDOS:`);
+  console.log(`   1. PENDING    → Cliente crea pedido`);
+  console.log(`   2. ACCEPTED   → Tienda acepta`);
+  console.log(`   3. PREPARING  → Tienda prepara`);
+  console.log(`   4. READY      → Listo para recoger`);
+  console.log(`   5. PICKED_UP  → Conductor recoge`);
+  console.log(`   6. ON_WAY     → En camino al cliente`);
+  console.log(`   7. DELIVERED  → ✅ Entregado`);
+  console.log(`\n🌐 RUTAS DISPONIBLES:`);
+  console.log(`   GET  /health              → Estado del servidor`);
+  console.log(`   POST /api/auth/register   → Registro de usuarios`);
+  console.log(`   POST /api/auth/login      → Inicio de sesión`);
+  console.log(`   GET  /api/stores          → Listar tiendas`);
+  console.log(`   GET  /api/orders          → Listar pedidos`);
+  console.log(`   POST /api/orders          → Crear pedido`);
+  console.log(`\n👥 USUARIOS DE PRUEBA:`);
+  console.log(`   Cliente:    cliente@delivery.com / cliente123`);
+  console.log(`   Conductor:  conductor@delivery.com / conductor123`);
+  console.log(`   Tienda:     tienda@delivery.com / tienda123`);
+  console.log(`   Admin:      admin@delivery.com / admin123`);
+  console.log(`${'='.repeat(60)}\n`);
 });
 
 module.exports = { app, server, io };
