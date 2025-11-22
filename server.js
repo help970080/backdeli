@@ -24,7 +24,6 @@ const userSockets = new Map();
 // FUNCIONES DE NOTIFICACIÓN
 // ============================================
 
-// Notificar a un usuario específico
 function notifyUser(userId, notification) {
   const socketId = userSockets.get(userId.toString());
   if (socketId) {
@@ -36,13 +35,11 @@ function notifyUser(userId, notification) {
   return false;
 }
 
-// Notificar a todos los usuarios conectados
 function notifyAll(notification) {
   io.emit('notification', notification);
   console.log(`📢 Notificación enviada a TODOS:`, notification.title);
 }
 
-// Notificar a todos los usuarios de un rol específico
 function notifyRole(role, notification) {
   const usersOfRole = database.users
     .filter(u => u.role === role)
@@ -59,7 +56,6 @@ function notifyRole(role, notification) {
   return sentCount;
 }
 
-// Notificar a múltiples usuarios específicos
 function notifyMultiple(userIds, notification) {
   let sentCount = 0;
   userIds.forEach(userId => {
@@ -421,7 +417,7 @@ function authenticateToken(req, res, next) {
 
 app.post('/api/auth/register', (req, res) => {
   try {
-    const { email, password, name, phone, role, vehicle, license, address } = req.body;
+    const { email, password, name, phone, role, vehicle, license, address, inePhoto, vehiclePhoto } = req.body;
 
     if (!email || !password || !name || !phone || !role) {
       return res.status(400).json({ error: 'Faltan campos requeridos' });
@@ -445,6 +441,8 @@ app.post('/api/auth/register', (req, res) => {
     if (role === 'driver') {
       newUser.vehicle = vehicle;
       newUser.license = license;
+      newUser.inePhoto = inePhoto;
+      newUser.vehiclePhoto = vehiclePhoto;
       newUser.available = false;
       newUser.approved = false;
       newUser.currentLocation = { lat: 19.4326, lng: -99.1332 };
@@ -522,7 +520,23 @@ app.post('/api/auth/login', (req, res) => {
   }
 });
 
+// ✅ CORREGIDO: Endpoint que usan los HTML
 app.get('/api/auth/me', authenticateToken, (req, res) => {
+  try {
+    const user = database.users.find(u => u.id === req.user.id);
+    if (!user) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    const { password, ...userWithoutPassword } = user;
+    res.json({ user: userWithoutPassword });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener usuario', details: error.message });
+  }
+});
+
+// ✅ ALIAS para mantener compatibilidad
+app.get('/api/users/profile', authenticateToken, (req, res) => {
   try {
     const user = database.users.find(u => u.id === req.user.id);
     if (!user) {
@@ -558,13 +572,886 @@ app.get('/api/stores', (req, res) => {
 app.get('/api/stores/:storeId', (req, res) => {
   try {
     const { storeId } = req.params;
-    const store = database.stores.find(s => s.id === parseInt(storeId));
+    const store = database.stores.find(s => s.id === storeId);
+    if (!store) {
+      return res.status(404).json({ error: 'Tienda no encontrada' });
+    }
+
+    if (!store.isOpen) {
+      return res.status(400).json({ error: 'La tienda está cerrada' });
+    }
+
+    let subtotal = 0;
+    const orderItems = items.map(item => {
+      const product = database.products.find(p => p.id === item.productId);
+      if (!product) {
+        throw new Error(`Producto ${item.productId} no encontrado`);
+      }
+      if (!product.available) {
+        throw new Error(`Producto ${product.name} no disponible`);
+      }
+      const itemTotal = product.price * item.quantity;
+      subtotal += itemTotal;
+      return {
+        productId: product.id,
+        name: product.name,
+        price: product.price,
+        quantity: item.quantity,
+        total: itemTotal
+      };
+    });
+
+    if (subtotal < store.minOrder) {
+      return res.status(400).json({ 
+        error: `El pedido mínimo es de ${store.minOrder}`,
+        minOrder: store.minOrder,
+        currentTotal: subtotal
+      });
+    }
+
+    const deliveryFee = store.deliveryFee;
+    const total = subtotal + deliveryFee + SERVICE_FEE;
+    const commission = subtotal * COMMISSION_RATE;
+
+    // ✅ Generar número de orden único
+    const orderNumber = database.orders.length + 1;
+
+    const customer = database.users.find(u => u.id === req.user.id);
+
+    const newOrder = {
+      id: database.orders.length + 1,
+      orderNumber: orderNumber, // ✅ AGREGADO
+      customerId: req.user.id,
+      storeId,
+      storeName: store.name,
+      items: orderItems,
+      subtotal,
+      deliveryFee,
+      serviceFee: SERVICE_FEE,
+      commission,
+      total,
+      status: ORDER_STATES.PENDING,
+      deliveryAddress,
+      paymentMethod,
+      notes: notes || '',
+      distance: 5.2, // ✅ AGREGADO
+      driverEarnings: 0, // ✅ AGREGADO
+      createdAt: new Date(),
+      // ✅ AGREGADO: Información completa para frontend
+      customer: {
+        id: customer.id,
+        name: customer.name,
+        phone: customer.phone
+      },
+      store: {
+        id: store.id,
+        name: store.name,
+        location: store.location
+      },
+      statusHistory: [
+        {
+          status: ORDER_STATES.PENDING,
+          timestamp: new Date(),
+          note: 'Pedido creado'
+        }
+      ]
+    };
+
+    database.orders.push(newOrder);
+    saveDatabase();
+
+    // Notificar al dueño de la tienda
+    notifyUser(store.ownerId, {
+      title: '¡Nuevo pedido!',
+      message: `Pedido #${newOrder.orderNumber} - ${total.toFixed(2)}`,
+      type: 'success',
+      orderId: newOrder.id,
+      timestamp: new Date()
+    });
+
+    // Notificar al admin
+    notifyRole('admin', {
+      title: 'Nuevo pedido en plataforma',
+      message: `Pedido #${newOrder.orderNumber} en ${store.name}`,
+      type: 'info',
+      orderId: newOrder.id,
+      timestamp: new Date()
+    });
+
+    res.status(201).json({ 
+      message: 'Pedido creado exitosamente',
+      order: newOrder 
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al crear pedido', details: error.message });
+  }
+});
+
+app.get('/api/orders', authenticateToken, (req, res) => {
+  try {
+    const { status } = req.query;
+    let orders = [];
+
+    if (req.user.role === 'client') {
+      orders = database.orders.filter(o => o.customerId === req.user.id);
+    } else if (req.user.role === 'driver') {
+      orders = database.orders.filter(o => 
+        o.driverId === req.user.id || 
+        o.status === ORDER_STATES.READY
+      );
+    } else if (req.user.role === 'store_owner') {
+      const userStores = database.stores.filter(s => s.ownerId === req.user.id);
+      const storeIds = userStores.map(s => s.id);
+      orders = database.orders.filter(o => storeIds.includes(o.storeId));
+    } else if (req.user.role === 'admin') {
+      orders = database.orders;
+    }
+
+    if (status) {
+      orders = orders.filter(o => o.status === status);
+    }
+
+    // ✅ CORREGIDO: Enriquecer órdenes con información completa
+    orders = orders.map(order => {
+      const store = database.stores.find(s => s.id === order.storeId);
+      const customer = database.users.find(u => u.id === order.customerId);
+      const driver = order.driverId ? database.users.find(u => u.id === order.driverId) : null;
+
+      return {
+        ...order,
+        store: store ? {
+          id: store.id,
+          name: store.name,
+          location: store.location
+        } : order.store,
+        customer: customer ? {
+          id: customer.id,
+          name: customer.name,
+          phone: customer.phone
+        } : order.customer,
+        driver: driver ? {
+          id: driver.id,
+          name: driver.name,
+          phone: driver.phone,
+          vehicle: driver.vehicle
+        } : order.driver
+      };
+    });
+
+    orders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    res.json({ orders });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener pedidos', details: error.message });
+  }
+});
+
+app.get('/api/orders/:orderId', authenticateToken, (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const order = database.orders.find(o => o.id === parseInt(orderId));
+
+    if (!order) {
+      return res.status(404).json({ error: 'Pedido no encontrado' });
+    }
+
+    const hasAccess = 
+      req.user.role === 'admin' ||
+      order.customerId === req.user.id ||
+      order.driverId === req.user.id ||
+      (req.user.role === 'store_owner' && 
+       database.stores.find(s => s.id === order.storeId)?.ownerId === req.user.id);
+
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'No tienes acceso a este pedido' });
+    }
+
+    res.json({ order });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener pedido', details: error.message });
+  }
+});
+
+app.put('/api/orders/:orderId/status', authenticateToken, (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { status, note } = req.body;
+    
+    const order = database.orders.find(o => o.id === parseInt(orderId));
+
+    if (!order) {
+      return res.status(404).json({ error: 'Pedido no encontrado' });
+    }
+
+    const currentStatePermissions = STATE_PERMISSIONS[order.status];
+
+    if (!currentStatePermissions.canUpdate.includes(req.user.role)) {
+      return res.status(403).json({ 
+        error: `Solo ${currentStatePermissions.canUpdate.join(' o ')} pueden actualizar este estado` 
+      });
+    }
+
+    if (!currentStatePermissions.nextStates.includes(status)) {
+      return res.status(400).json({ 
+        error: `No se puede cambiar de ${order.status} a ${status}`,
+        allowedStates: currentStatePermissions.nextStates
+      });
+    }
+
+    const oldStatus = order.status;
+    order.status = status;
+    order.statusHistory.push({
+      status,
+      timestamp: new Date(),
+      note: note || '',
+      updatedBy: req.user.id
+    });
+
+    // Actualizar campos específicos según el estado
+    if (status === ORDER_STATES.PICKED_UP) {
+      order.pickedUpAt = new Date();
+    } else if (status === ORDER_STATES.DELIVERED) {
+      order.deliveredAt = new Date();
+      
+      const driver = database.users.find(u => u.id === order.driverId);
+      if (driver) {
+        driver.totalDeliveries += 1;
+        driver.totalEarnings += order.driverEarnings;
+      }
+
+      order.platformEarnings = order.commission + order.serviceFee;
+    } else if (status === ORDER_STATES.ACCEPTED) {
+      order.acceptedAt = new Date();
+    } else if (status === ORDER_STATES.READY) {
+      order.readyAt = new Date();
+    }
+
+    // Notificaciones
+    const store = database.stores.find(s => s.id === order.storeId);
+    const customer = database.users.find(u => u.id === order.customerId);
+    
+    notifyUser(order.customerId, {
+      title: 'Actualización de pedido',
+      message: getStatusMessage(status, order),
+      type: 'info',
+      orderId: order.id,
+      status: status,
+      timestamp: new Date()
+    });
+
+    if (status === ORDER_STATES.ACCEPTED) {
+      notifyRole('admin', {
+        title: 'Pedido aceptado',
+        message: `Pedido #${order.orderNumber} aceptado por ${store.name}`,
+        type: 'info',
+        orderId: order.id,
+        timestamp: new Date()
+      });
+    } 
+    else if (status === ORDER_STATES.READY) {
+      notifyRole('driver', {
+        title: '¡Nuevo pedido disponible!',
+        message: `Pedido #${order.orderNumber} listo para recoger en ${store.name}`,
+        type: 'success',
+        orderId: order.id,
+        timestamp: new Date()
+      });
+      
+      notifyRole('admin', {
+        title: 'Pedido listo',
+        message: `Pedido #${order.orderNumber} listo para entrega`,
+        type: 'info',
+        orderId: order.id,
+        timestamp: new Date()
+      });
+    }
+    else if (status === ORDER_STATES.PICKED_UP) {
+      if (store) {
+        notifyUser(store.ownerId, {
+          title: 'Pedido recogido',
+          message: `Pedido #${order.orderNumber} recogido por el conductor`,
+          type: 'info',
+          orderId: order.id,
+          timestamp: new Date()
+        });
+      }
+    }
+    else if (status === ORDER_STATES.DELIVERED) {
+      if (store) {
+        notifyUser(store.ownerId, {
+          title: 'Pedido entregado',
+          message: `Pedido #${order.orderNumber} entregado exitosamente`,
+          type: 'success',
+          orderId: order.id,
+          timestamp: new Date()
+        });
+      }
+
+      if (order.driverId) {
+        notifyUser(order.driverId, {
+          title: 'Entrega completada',
+          message: `Ganaste ${order.driverEarnings.toFixed(2)} por esta entrega`,
+          type: 'success',
+          orderId: order.id,
+          timestamp: new Date()
+        });
+      }
+
+      notifyRole('admin', {
+        title: 'Pedido completado',
+        message: `Pedido #${order.orderNumber} entregado - Ganancia: ${order.platformEarnings.toFixed(2)}`,
+        type: 'success',
+        orderId: order.id,
+        timestamp: new Date()
+      });
+    }
+    else if (status === ORDER_STATES.CANCELLED) {
+      const usersToNotify = [order.customerId];
+      if (store) usersToNotify.push(store.ownerId);
+      if (order.driverId) usersToNotify.push(order.driverId);
+
+      notifyMultiple(usersToNotify, {
+        title: 'Pedido cancelado',
+        message: `El pedido #${order.orderNumber} ha sido cancelado`,
+        type: 'warning',
+        orderId: order.id,
+        timestamp: new Date()
+      });
+
+      notifyRole('admin', {
+        title: 'Pedido cancelado',
+        message: `Pedido #${order.orderNumber} cancelado en estado ${oldStatus}`,
+        type: 'warning',
+        orderId: order.id,
+        timestamp: new Date()
+      });
+    }
+
+    saveDatabase();
+    res.json({ 
+      message: 'Estado actualizado exitosamente',
+      order 
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al actualizar estado', details: error.message });
+  }
+});
+
+function getStatusMessage(status, order) {
+  const messages = {
+    'accepted': 'Tu pedido ha sido aceptado y está siendo preparado',
+    'preparing': 'Tu pedido está en preparación',
+    'ready': 'Tu pedido está listo y esperando al conductor',
+    'picked_up': 'El conductor ha recogido tu pedido',
+    'on_way': 'Tu pedido está en camino',
+    'delivered': '¡Tu pedido ha sido entregado!',
+    'cancelled': 'Tu pedido ha sido cancelado'
+  };
+  return messages[status] || 'Estado del pedido actualizado';
+}
+
+app.put('/api/orders/:orderId/assign', authenticateToken, (req, res) => {
+  try {
+    if (req.user.role !== 'driver') {
+      return res.status(403).json({ error: 'Solo conductores pueden asignarse pedidos' });
+    }
+
+    const { orderId } = req.params;
+    const order = database.orders.find(o => o.id === parseInt(orderId));
+
+    if (!order) {
+      return res.status(404).json({ error: 'Pedido no encontrado' });
+    }
+
+    if (order.status !== ORDER_STATES.READY) {
+      return res.status(400).json({ error: 'El pedido no está listo para ser recogido' });
+    }
+
+    if (order.driverId) {
+      return res.status(400).json({ error: 'El pedido ya tiene un conductor asignado' });
+    }
+
+    const driver = database.users.find(u => u.id === req.user.id);
+    if (!driver.approved || !driver.available) {
+      return res.status(403).json({ error: 'No estás disponible para tomar pedidos' });
+    }
+
+    order.driverId = req.user.id;
+    order.driverName = driver.name;
+    order.assignedAt = new Date();
+    
+    const deliveryDistance = 5;
+    const driverEarnings = (order.deliveryFee * 0.7) + (deliveryDistance * 5);
+    order.driverEarnings = driverEarnings;
+
+    const store = database.stores.find(s => s.id === order.storeId);
+
+    notifyUser(order.customerId, {
+      title: 'Conductor asignado',
+      message: `${driver.name} recogerá tu pedido`,
+      type: 'info',
+      orderId: order.id,
+      timestamp: new Date()
+    });
+
+    if (store) {
+      notifyUser(store.ownerId, {
+        title: 'Conductor asignado',
+        message: `${driver.name} recogerá el pedido #${order.orderNumber}`,
+        type: 'info',
+        orderId: order.id,
+        timestamp: new Date()
+      });
+    }
+
+    notifyRole('admin', {
+      title: 'Pedido asignado',
+      message: `Pedido #${order.orderNumber} asignado a ${driver.name}`,
+      type: 'info',
+      orderId: order.id,
+      timestamp: new Date()
+    });
+
+    saveDatabase();
+    res.json({ 
+      message: 'Pedido asignado exitosamente',
+      order,
+      earnings: driverEarnings
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al asignar pedido', details: error.message });
+  }
+});
+
+// ============================================
+// CONDUCTORES
+// ============================================
+
+app.get('/api/drivers', authenticateToken, (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    const drivers = database.users
+      .filter(u => u.role === 'driver')
+      .map(({ password, ...driver }) => driver);
+
+    res.json({ drivers });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener conductores', details: error.message });
+  }
+});
+
+app.get('/api/drivers/available', (req, res) => {
+  try {
+    const drivers = database.users
+      .filter(u => u.role === 'driver' && u.available && u.approved)
+      .map(({ password, email, ...driver }) => ({
+        ...driver,
+        activeOrders: database.orders.filter(o => 
+          o.driverId === driver.id && 
+          !['delivered', 'cancelled'].includes(o.status)
+        ).length
+      }));
+
+    res.json({ drivers });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener conductores', details: error.message });
+  }
+});
+
+app.put('/api/drivers/:driverId/availability', authenticateToken, (req, res) => {
+  try {
+    const { driverId } = req.params;
+    const { available } = req.body;
+
+    if (req.user.id !== parseInt(driverId) && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    const driver = database.users.find(u => u.id === parseInt(driverId) && u.role === 'driver');
+
+    if (!driver) {
+      return res.status(404).json({ error: 'Conductor no encontrado' });
+    }
+
+    if (!driver.approved) {
+      return res.status(403).json({ error: 'Tu cuenta aún no ha sido aprobada' });
+    }
+
+    driver.available = available;
+
+    saveDatabase();
+    res.json({ 
+      message: `Estado cambiado a ${available ? 'disponible' : 'no disponible'}`,
+      driver: { id: driver.id, available: driver.available }
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al actualizar disponibilidad', details: error.message });
+  }
+});
+
+app.put('/api/drivers/:driverId/location', authenticateToken, (req, res) => {
+  try {
+    const { driverId } = req.params;
+    const { lat, lng } = req.body;
+
+    if (req.user.id !== parseInt(driverId)) {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    const driver = database.users.find(u => u.id === parseInt(driverId) && u.role === 'driver');
+
+    if (!driver) {
+      return res.status(404).json({ error: 'Conductor no encontrado' });
+    }
+
+    driver.currentLocation = { lat, lng };
+
+    res.json({ 
+      message: 'Ubicación actualizada',
+      location: driver.currentLocation
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al actualizar ubicación', details: error.message });
+  }
+});
+
+// ============================================
+// ADMIN
+// ============================================
+
+app.get('/api/admin/stats', authenticateToken, (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    const allOrders = database.orders;
+    const completedOrders = allOrders.filter(o => o.status === 'delivered');
+    const today = new Date().toDateString();
+
+    const stats = {
+      totalOrders: allOrders.length,
+      completedOrders: completedOrders.length,
+      pendingOrders: allOrders.filter(o => o.status === 'pending').length,
+      activeOrders: allOrders.filter(o => !['delivered', 'cancelled'].includes(o.status)).length,
+      cancelledOrders: allOrders.filter(o => o.status === 'cancelled').length,
+      totalPlatformEarnings: completedOrders.reduce((sum, o) => sum + (o.platformEarnings || 0), 0),
+      totalCommissions: completedOrders.reduce((sum, o) => sum + (o.commission || 0), 0),
+      totalServiceFees: completedOrders.reduce((sum, o) => sum + (o.serviceFee || 0), 0),
+      totalDriverEarnings: completedOrders.reduce((sum, o) => sum + (o.driverEarnings || 0), 0),
+      totalRevenue: completedOrders.reduce((sum, o) => sum + o.total, 0),
+      totalDrivers: database.users.filter(u => u.role === 'driver' && u.approved).length,
+      pendingDrivers: database.users.filter(u => u.role === 'driver' && !u.approved).length,
+      availableDrivers: database.users.filter(u => u.role === 'driver' && u.available && u.approved).length,
+      totalClients: database.users.filter(u => u.role === 'client').length,
+      totalStores: database.stores.length,
+      totalProducts: database.products.length,
+      today: today,
+      ordersToday: allOrders.filter(o => new Date(o.createdAt).toDateString() === today).length,
+      earningsToday: completedOrders
+        .filter(o => o.deliveredAt && new Date(o.deliveredAt).toDateString() === today)
+        .reduce((sum, o) => sum + (o.platformEarnings || 0), 0),
+      averageOrderValue: completedOrders.length > 0 
+        ? completedOrders.reduce((sum, o) => sum + o.total, 0) / completedOrders.length 
+        : 0,
+      averagePlatformEarningPerOrder: completedOrders.length > 0
+        ? completedOrders.reduce((sum, o) => sum + (o.platformEarnings || 0), 0) / completedOrders.length
+        : 0
+    };
+
+    res.json({ stats });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener estadísticas', details: error.message });
+  }
+});
+
+app.get('/api/admin/drivers/pending', authenticateToken, (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    const pendingDrivers = database.users
+      .filter(u => u.role === 'driver' && u.approved === false)
+      .map(({ password, ...driver }) => driver);
+
+    res.json({ drivers: pendingDrivers });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener conductores', details: error.message });
+  }
+});
+
+app.put('/api/admin/drivers/:driverId/approve', authenticateToken, (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    const { driverId } = req.params;
+    const driver = database.users.find(u => u.id === parseInt(driverId) && u.role === 'driver');
+
+    if (!driver) {
+      return res.status(404).json({ error: 'Conductor no encontrado' });
+    }
+
+    driver.approved = true;
+    driver.available = true;
+
+    notifyUser(driver.id, {
+      title: '¡Cuenta aprobada!',
+      message: 'Tu cuenta de conductor ha sido aprobada. Ya puedes comenzar a tomar pedidos.',
+      type: 'success',
+      timestamp: new Date()
+    });
+
+    saveDatabase();
+    res.json({
+      message: 'Conductor aprobado',
+      driver: { id: driver.id, name: driver.name, email: driver.email, approved: true }
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al aprobar conductor', details: error.message });
+  }
+});
+
+app.delete('/api/admin/drivers/:driverId/reject', authenticateToken, (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    const { driverId } = req.params;
+    const driverIndex = database.users.findIndex(u => u.id === parseInt(driverId) && u.role === 'driver');
+
+    if (driverIndex === -1) {
+      return res.status(404).json({ error: 'Conductor no encontrado' });
+    }
+
+    const driver = database.users[driverIndex];
+
+    notifyUser(driver.id, {
+      title: 'Solicitud rechazada',
+      message: 'Tu solicitud de conductor no ha sido aprobada. Contacta con soporte para más información.',
+      type: 'warning',
+      timestamp: new Date()
+    });
+
+    database.users.splice(driverIndex, 1);
+    saveDatabase();
+    res.json({ message: 'Conductor rechazado' });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al rechazar conductor', details: error.message });
+  }
+});
+
+app.get('/api/stats', authenticateToken, (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userRole = req.user.role;
+    let stats = {};
+
+    if (userRole === 'client') {
+      const userOrders = database.orders.filter(o => o.customerId === userId);
+      stats = {
+        totalOrders: userOrders.length,
+        totalSpent: userOrders.reduce((sum, o) => sum + o.total, 0),
+        completedOrders: userOrders.filter(o => o.status === 'delivered').length,
+        cancelledOrders: userOrders.filter(o => o.status === 'cancelled').length
+      };
+    } else if (userRole === 'driver') {
+      const driver = database.users.find(u => u.id === userId);
+      const driverOrders = database.orders.filter(o => o.driverId === userId);
+      const completedOrders = driverOrders.filter(o => o.status === 'delivered');
+      
+      stats = {
+        totalDeliveries: driver.totalDeliveries,
+        totalEarnings: driver.totalEarnings,
+        rating: driver.rating,
+        activeOrders: driverOrders.filter(o => !['delivered', 'cancelled'].includes(o.status)).length,
+        completedToday: completedOrders.filter(o => {
+          const today = new Date().toDateString();
+          return o.deliveredAt && new Date(o.deliveredAt).toDateString() === today;
+        }).length,
+        earningsToday: completedOrders
+          .filter(o => {
+            const today = new Date().toDateString();
+            return o.deliveredAt && new Date(o.deliveredAt).toDateString() === today;
+          })
+          .reduce((sum, o) => sum + (o.driverEarnings || 0), 0)
+      };
+    } else if (userRole === 'store_owner') {
+      const userStores = database.stores.filter(s => s.ownerId === userId);
+      const storeIds = userStores.map(s => s.id);
+      const storeOrders = database.orders.filter(o => storeIds.includes(o.storeId));
+      const completedOrders = storeOrders.filter(o => o.status === 'delivered');
+      
+      stats = {
+        totalStores: userStores.length,
+        totalProducts: database.products.filter(p => storeIds.includes(p.storeId)).length,
+        totalOrders: storeOrders.length,
+        totalRevenue: completedOrders.reduce((sum, o) => sum + o.subtotal, 0),
+        activeOrders: storeOrders.filter(o => !['delivered', 'cancelled'].includes(o.status)).length,
+        ordersToday: storeOrders.filter(o => {
+          const today = new Date().toDateString();
+          return new Date(o.createdAt).toDateString() === today;
+        }).length
+      };
+    }
+
+    res.json({ stats });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener estadísticas', details: error.message });
+  }
+});
+
+// ============================================
+// WEBSOCKET
+// ============================================
+
+io.on('connection', (socket) => {
+  console.log('🔌 Cliente conectado:', socket.id);
+
+  socket.on('register', (data) => {
+    const { userId } = data;
+    userSockets.set(userId.toString(), socket.id);
+    console.log(`✅ Usuario ${userId} registrado con socket ${socket.id}`);
+  });
+
+  socket.on('subscribe', (data) => {
+    const { userId, role } = data;
+    socket.join(`${role}:${userId}`);
+    userSockets.set(userId.toString(), socket.id);
+    console.log(`📡 Usuario ${userId} (${role}) suscrito`);
+  });
+
+  socket.on('update_location', (data) => {
+    const { driverId, lat, lng } = data;
+    const driver = database.users.find(u => u.id === driverId);
+    if (driver) {
+      driver.currentLocation = { lat, lng };
+      io.emit('driver_location_update', { driverId, location: { lat, lng } });
+    }
+  });
+
+  socket.on('disconnect', () => {
+    for (const [userId, socketId] of userSockets.entries()) {
+      if (socketId === socket.id) {
+        userSockets.delete(userId);
+        console.log(`❌ Usuario ${userId} desconectado`);
+        break;
+      }
+    }
+    console.log('🔌 Cliente desconectado:', socket.id);
+  });
+});
+
+// ============================================
+// RUTAS HTML - ✅ MOVIDAS ANTES DEL 404
+// ============================================
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.get('/register', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'register.html'));
+});
+
+app.get('/cliente', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'cliente.html'));
+});
+
+app.get('/conductor', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'conductor.html'));
+});
+
+app.get('/tienda', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'tienda.html'));
+});
+
+app.get('/admin', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
+// ============================================
+// HEALTH CHECK
+// ============================================
+
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    timestamp: new Date(),
+    uptime: process.uptime(),
+    stores: database.stores.length,
+    products: database.products.length,
+    orders: database.orders.length,
+    connectedUsers: userSockets.size
+  });
+});
+
+// ============================================
+// 404 HANDLER - ✅ DEBE SER EL ÚLTIMO
+// ============================================
+
+app.use((req, res) => {
+  res.status(404).json({ error: 'Ruta no encontrada' });
+});
+
+// ============================================
+// INICIAR SERVIDOR
+// ============================================
+
+server.listen(PORT, () => {
+  console.log(`\n${'='.repeat(60)}`);
+  console.log(`🚀 SERVIDOR DE DELIVERY INICIADO`);
+  console.log(`${'='.repeat(60)}`);
+  console.log(`🌐 Puerto: ${PORT}`);
+  console.log(`📡 WebSocket: Habilitado`);
+  console.log(`🔔 Notificaciones: Activas`);
+  console.log(`💰 Comisión: ${COMMISSION_RATE * 100}% | Fee de servicio: ${SERVICE_FEE}`);
+  console.log(`🏪 Tiendas: ${database.stores.length} | 📦 Productos: ${database.products.length}`);
+  console.log(`\n📋 FLUJO DE ESTADOS DE PEDIDOS:`);
+  console.log(`   1. PENDING    → Cliente crea pedido`);
+  console.log(`   2. ACCEPTED   → Tienda acepta`);
+  console.log(`   3. PREPARING  → Tienda prepara`);
+  console.log(`   4. READY      → Listo para recoger`);
+  console.log(`   5. PICKED_UP  → Conductor recoge`);
+  console.log(`   6. ON_WAY     → En camino al cliente`);
+  console.log(`   7. DELIVERED  → ✅ Entregado`);
+  console.log(`\n🌐 RUTAS DISPONIBLES:`);
+  console.log(`   GET  /                    → Login`);
+  console.log(`   GET  /register            → Registro`);
+  console.log(`   GET  /cliente             → Panel Cliente`);
+  console.log(`   GET  /conductor           → Panel Conductor`);
+  console.log(`   GET  /tienda              → Panel Tienda`);
+  console.log(`   GET  /admin               → Panel Admin`);
+  console.log(`   GET  /health              → Estado del servidor`);
+  console.log(`   POST /api/auth/register   → Registro de usuarios`);
+  console.log(`   POST /api/auth/login      → Inicio de sesión`);
+  console.log(`   GET  /api/stores          → Listar tiendas`);
+  console.log(`   GET  /api/orders          → Listar pedidos`);
+  console.log(`   POST /api/orders          → Crear pedido`);
+  console.log(`\n👥 USUARIOS DE PRUEBA:`);
+  console.log(`   Cliente:    cliente@delivery.com / cliente123`);
+  console.log(`   Conductor:  conductor@delivery.com / conductor123`);
+  console.log(`   Tienda:     tienda@delivery.com / tienda123`);
+  console.log(`   Admin:      admin@delivery.com / admin123`);
+  console.log(`${'='.repeat(60)}\n`);
+});
+
+module.exports = { app, server, io };stores.find(s => s.id === parseInt(storeId));
 
     if (!store) {
       return res.status(404).json({ error: 'Tienda no encontrada' });
     }
 
-    res.json({ store });
+    // ✅ CORREGIDO: Incluir productos en la respuesta
+    const products = database.products.filter(p => p.storeId === store.id);
+
+    res.json({ store, products });
   } catch (error) {
     res.status(500).json({ error: 'Error al obtener tienda', details: error.message });
   }
@@ -597,7 +1484,6 @@ app.post('/api/stores', authenticateToken, upload.single('image'), (req, res) =>
     database.stores.push(newStore);
     saveDatabase();
 
-    // Notificar a todos los clientes de nueva tienda
     notifyRole('client', {
       title: '¡Nueva tienda disponible!',
       message: `${name} ahora está en la plataforma`,
@@ -816,840 +1702,4 @@ app.post('/api/orders', authenticateToken, (req, res) => {
       return res.status(400).json({ error: 'El pedido debe tener al menos un producto' });
     }
 
-    const store = database.stores.find(s => s.id === storeId);
-    if (!store) {
-      return res.status(404).json({ error: 'Tienda no encontrada' });
-    }
-
-    if (!store.isOpen) {
-      return res.status(400).json({ error: 'La tienda está cerrada' });
-    }
-
-    let subtotal = 0;
-    const orderItems = items.map(item => {
-      const product = database.products.find(p => p.id === item.productId);
-      if (!product) {
-        throw new Error(`Producto ${item.productId} no encontrado`);
-      }
-      if (!product.available) {
-        throw new Error(`Producto ${product.name} no disponible`);
-      }
-      const itemTotal = product.price * item.quantity;
-      subtotal += itemTotal;
-      return {
-        productId: product.id,
-        name: product.name,
-        price: product.price,
-        quantity: item.quantity,
-        total: itemTotal
-      };
-    });
-
-    if (subtotal < store.minOrder) {
-      return res.status(400).json({ 
-        error: `El pedido mínimo es de $${store.minOrder}`,
-        minOrder: store.minOrder,
-        currentTotal: subtotal
-      });
-    }
-
-    const deliveryFee = store.deliveryFee;
-    const total = subtotal + deliveryFee;
-    const commission = subtotal * COMMISSION_RATE;
-
-    const newOrder = {
-      id: database.orders.length + 1,
-      customerId: req.user.id,
-      storeId,
-      storeName: store.name,
-      items: orderItems,
-      subtotal,
-      deliveryFee,
-      serviceFee: SERVICE_FEE,
-      commission,
-      total,
-      status: ORDER_STATES.PENDING,
-      deliveryAddress,
-      paymentMethod,
-      notes: notes || '',
-      createdAt: new Date(),
-      statusHistory: [
-        {
-          status: ORDER_STATES.PENDING,
-          timestamp: new Date(),
-          note: 'Pedido creado'
-        }
-      ]
-    };
-
-    database.orders.push(newOrder);
-    saveDatabase();
-
-    // 🔔 NOTIFICACIONES: Nuevo pedido
-    // Notificar al dueño de la tienda
-    notifyUser(store.ownerId, {
-      title: '¡Nuevo pedido!',
-      message: `Pedido #${newOrder.id} - $${total.toFixed(2)}`,
-      type: 'success',
-      orderId: newOrder.id,
-      timestamp: new Date()
-    });
-
-    // Notificar al admin
-    notifyRole('admin', {
-      title: 'Nuevo pedido en plataforma',
-      message: `Pedido #${newOrder.id} en ${store.name}`,
-      type: 'info',
-      orderId: newOrder.id,
-      timestamp: new Date()
-    });
-
-    res.status(201).json({ 
-      message: 'Pedido creado exitosamente',
-      order: newOrder 
-    });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al crear pedido', details: error.message });
-  }
-});
-
-app.get('/api/orders', authenticateToken, (req, res) => {
-  try {
-    const { status } = req.query;
-    let orders = [];
-
-    if (req.user.role === 'client') {
-      orders = database.orders.filter(o => o.customerId === req.user.id);
-    } else if (req.user.role === 'driver') {
-      orders = database.orders.filter(o => o.driverId === req.user.id || o.status === ORDER_STATES.READY);
-    } else if (req.user.role === 'store_owner') {
-      const userStores = database.stores.filter(s => s.ownerId === req.user.id);
-      const storeIds = userStores.map(s => s.id);
-      orders = database.orders.filter(o => storeIds.includes(o.storeId));
-    } else if (req.user.role === 'admin') {
-      orders = database.orders;
-    }
-
-    if (status) {
-      orders = orders.filter(o => o.status === status);
-    }
-
-    orders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-    res.json({ orders });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al obtener pedidos', details: error.message });
-  }
-});
-
-app.get('/api/orders/:orderId', authenticateToken, (req, res) => {
-  try {
-    const { orderId } = req.params;
-    const order = database.orders.find(o => o.id === parseInt(orderId));
-
-    if (!order) {
-      return res.status(404).json({ error: 'Pedido no encontrado' });
-    }
-
-    const hasAccess = 
-      req.user.role === 'admin' ||
-      order.customerId === req.user.id ||
-      order.driverId === req.user.id ||
-      (req.user.role === 'store_owner' && 
-       database.stores.find(s => s.id === order.storeId)?.ownerId === req.user.id);
-
-    if (!hasAccess) {
-      return res.status(403).json({ error: 'No tienes acceso a este pedido' });
-    }
-
-    res.json({ order });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al obtener pedido', details: error.message });
-  }
-});
-
-app.put('/api/orders/:orderId/status', authenticateToken, (req, res) => {
-  try {
-    const { orderId } = req.params;
-    const { status, note } = req.body;
-    
-    const order = database.orders.find(o => o.id === parseInt(orderId));
-
-    if (!order) {
-      return res.status(404).json({ error: 'Pedido no encontrado' });
-    }
-
-    const currentStatePermissions = STATE_PERMISSIONS[order.status];
-
-    if (!currentStatePermissions.canUpdate.includes(req.user.role)) {
-      return res.status(403).json({ 
-        error: `Solo ${currentStatePermissions.canUpdate.join(' o ')} pueden actualizar este estado` 
-      });
-    }
-
-    if (!currentStatePermissions.nextStates.includes(status)) {
-      return res.status(400).json({ 
-        error: `No se puede cambiar de ${order.status} a ${status}`,
-        allowedStates: currentStatePermissions.nextStates
-      });
-    }
-
-    const oldStatus = order.status;
-    order.status = status;
-    order.statusHistory.push({
-      status,
-      timestamp: new Date(),
-      note: note || '',
-      updatedBy: req.user.id
-    });
-
-    // Actualizar campos específicos según el estado
-    if (status === ORDER_STATES.PICKED_UP) {
-      order.pickedUpAt = new Date();
-    } else if (status === ORDER_STATES.DELIVERED) {
-      order.deliveredAt = new Date();
-      
-      const driver = database.users.find(u => u.id === order.driverId);
-      if (driver) {
-        driver.totalDeliveries += 1;
-        driver.totalEarnings += order.driverEarnings;
-      }
-
-      order.platformEarnings = order.commission + order.serviceFee;
-    } else if (status === ORDER_STATES.ACCEPTED) {
-      order.acceptedAt = new Date();
-    } else if (status === ORDER_STATES.READY) {
-      order.readyAt = new Date();
-    }
-
-    // 🔔 NOTIFICACIONES: Cambio de estado
-    const store = database.stores.find(s => s.id === order.storeId);
-    const customer = database.users.find(u => u.id === order.customerId);
-    
-    // Notificar al cliente siempre
-    notifyUser(order.customerId, {
-      title: 'Actualización de pedido',
-      message: getStatusMessage(status, order),
-      type: 'info',
-      orderId: order.id,
-      status: status,
-      timestamp: new Date()
-    });
-
-    // Notificaciones específicas por estado
-    if (status === ORDER_STATES.ACCEPTED) {
-      // Notificar al admin
-      notifyRole('admin', {
-        title: 'Pedido aceptado',
-        message: `Pedido #${order.id} aceptado por ${store.name}`,
-        type: 'info',
-        orderId: order.id,
-        timestamp: new Date()
-      });
-    } 
-    else if (status === ORDER_STATES.READY) {
-      // Notificar a todos los conductores disponibles
-      notifyRole('driver', {
-        title: '¡Nuevo pedido disponible!',
-        message: `Pedido #${order.id} listo para recoger en ${store.name}`,
-        type: 'success',
-        orderId: order.id,
-        timestamp: new Date()
-      });
-      
-      // Notificar al admin
-      notifyRole('admin', {
-        title: 'Pedido listo',
-        message: `Pedido #${order.id} listo para entrega`,
-        type: 'info',
-        orderId: order.id,
-        timestamp: new Date()
-      });
-    }
-    else if (status === ORDER_STATES.PICKED_UP) {
-      // Notificar a la tienda
-      if (store) {
-        notifyUser(store.ownerId, {
-          title: 'Pedido recogido',
-          message: `Pedido #${order.id} recogido por el conductor`,
-          type: 'info',
-          orderId: order.id,
-          timestamp: new Date()
-        });
-      }
-    }
-    else if (status === ORDER_STATES.DELIVERED) {
-      // Notificar a la tienda
-      if (store) {
-        notifyUser(store.ownerId, {
-          title: 'Pedido entregado',
-          message: `Pedido #${order.id} entregado exitosamente`,
-          type: 'success',
-          orderId: order.id,
-          timestamp: new Date()
-        });
-      }
-
-      // Notificar al conductor
-      if (order.driverId) {
-        notifyUser(order.driverId, {
-          title: 'Entrega completada',
-          message: `Ganaste $${order.driverEarnings.toFixed(2)} por esta entrega`,
-          type: 'success',
-          orderId: order.id,
-          timestamp: new Date()
-        });
-      }
-
-      // Notificar al admin
-      notifyRole('admin', {
-        title: 'Pedido completado',
-        message: `Pedido #${order.id} entregado - Ganancia: $${order.platformEarnings.toFixed(2)}`,
-        type: 'success',
-        orderId: order.id,
-        timestamp: new Date()
-      });
-    }
-    else if (status === ORDER_STATES.CANCELLED) {
-      // Notificar a todos los involucrados
-      const usersToNotify = [order.customerId];
-      if (store) usersToNotify.push(store.ownerId);
-      if (order.driverId) usersToNotify.push(order.driverId);
-
-      notifyMultiple(usersToNotify, {
-        title: 'Pedido cancelado',
-        message: `El pedido #${order.id} ha sido cancelado`,
-        type: 'warning',
-        orderId: order.id,
-        timestamp: new Date()
-      });
-
-      // Notificar al admin
-      notifyRole('admin', {
-        title: 'Pedido cancelado',
-        message: `Pedido #${order.id} cancelado en estado ${oldStatus}`,
-        type: 'warning',
-        orderId: order.id,
-        timestamp: new Date()
-      });
-    }
-
-    saveDatabase();
-    res.json({ 
-      message: 'Estado actualizado exitosamente',
-      order 
-    });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al actualizar estado', details: error.message });
-  }
-});
-
-// Función auxiliar para mensajes de estado
-function getStatusMessage(status, order) {
-  const messages = {
-    'accepted': 'Tu pedido ha sido aceptado y está siendo preparado',
-    'preparing': 'Tu pedido está en preparación',
-    'ready': 'Tu pedido está listo y esperando al conductor',
-    'picked_up': 'El conductor ha recogido tu pedido',
-    'on_way': 'Tu pedido está en camino',
-    'delivered': '¡Tu pedido ha sido entregado!',
-    'cancelled': 'Tu pedido ha sido cancelado'
-  };
-  return messages[status] || 'Estado del pedido actualizado';
-}
-
-app.put('/api/orders/:orderId/assign', authenticateToken, (req, res) => {
-  try {
-    if (req.user.role !== 'driver') {
-      return res.status(403).json({ error: 'Solo conductores pueden asignarse pedidos' });
-    }
-
-    const { orderId } = req.params;
-    const order = database.orders.find(o => o.id === parseInt(orderId));
-
-    if (!order) {
-      return res.status(404).json({ error: 'Pedido no encontrado' });
-    }
-
-    if (order.status !== ORDER_STATES.READY) {
-      return res.status(400).json({ error: 'El pedido no está listo para ser recogido' });
-    }
-
-    if (order.driverId) {
-      return res.status(400).json({ error: 'El pedido ya tiene un conductor asignado' });
-    }
-
-    const driver = database.users.find(u => u.id === req.user.id);
-    if (!driver.approved || !driver.available) {
-      return res.status(403).json({ error: 'No estás disponible para tomar pedidos' });
-    }
-
-    order.driverId = req.user.id;
-    order.driverName = driver.name;
-    order.assignedAt = new Date();
-    
-    const deliveryDistance = 5;
-    const driverEarnings = (order.deliveryFee * 0.7) + (deliveryDistance * 5);
-    order.driverEarnings = driverEarnings;
-
-    // 🔔 NOTIFICACIONES: Conductor asignado
-    const store = database.stores.find(s => s.id === order.storeId);
-
-    // Notificar al cliente
-    notifyUser(order.customerId, {
-      title: 'Conductor asignado',
-      message: `${driver.name} recogerá tu pedido`,
-      type: 'info',
-      orderId: order.id,
-      timestamp: new Date()
-    });
-
-    // Notificar a la tienda
-    if (store) {
-      notifyUser(store.ownerId, {
-        title: 'Conductor asignado',
-        message: `${driver.name} recogerá el pedido #${order.id}`,
-        type: 'info',
-        orderId: order.id,
-        timestamp: new Date()
-      });
-    }
-
-    // Notificar al admin
-    notifyRole('admin', {
-      title: 'Pedido asignado',
-      message: `Pedido #${order.id} asignado a ${driver.name}`,
-      type: 'info',
-      orderId: order.id,
-      timestamp: new Date()
-    });
-
-    saveDatabase();
-    res.json({ 
-      message: 'Pedido asignado exitosamente',
-      order,
-      earnings: driverEarnings
-    });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al asignar pedido', details: error.message });
-  }
-});
-
-// ============================================
-// CONDUCTORES
-// ============================================
-
-app.get('/api/drivers', authenticateToken, (req, res) => {
-  try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'No autorizado' });
-    }
-
-    const drivers = database.users
-      .filter(u => u.role === 'driver')
-      .map(({ password, ...driver }) => driver);
-
-    res.json({ drivers });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al obtener conductores', details: error.message });
-  }
-});
-
-app.get('/api/drivers/available', (req, res) => {
-  try {
-    const drivers = database.users
-      .filter(u => u.role === 'driver' && u.available && u.approved)
-      .map(({ password, email, ...driver }) => ({
-        ...driver,
-        activeOrders: database.orders.filter(o => 
-          o.driverId === driver.id && 
-          !['delivered', 'cancelled'].includes(o.status)
-        ).length
-      }));
-
-    res.json({ drivers });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al obtener conductores', details: error.message });
-  }
-});
-
-app.put('/api/drivers/:driverId/availability', authenticateToken, (req, res) => {
-  try {
-    const { driverId } = req.params;
-    const { available } = req.body;
-
-    if (req.user.id !== parseInt(driverId) && req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'No autorizado' });
-    }
-
-    const driver = database.users.find(u => u.id === parseInt(driverId) && u.role === 'driver');
-
-    if (!driver) {
-      return res.status(404).json({ error: 'Conductor no encontrado' });
-    }
-
-    if (!driver.approved) {
-      return res.status(403).json({ error: 'Tu cuenta aún no ha sido aprobada' });
-    }
-
-    driver.available = available;
-
-    saveDatabase();
-    res.json({ 
-      message: `Estado cambiado a ${available ? 'disponible' : 'no disponible'}`,
-      driver: { id: driver.id, available: driver.available }
-    });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al actualizar disponibilidad', details: error.message });
-  }
-});
-
-app.put('/api/drivers/:driverId/location', authenticateToken, (req, res) => {
-  try {
-    const { driverId } = req.params;
-    const { lat, lng } = req.body;
-
-    if (req.user.id !== parseInt(driverId)) {
-      return res.status(403).json({ error: 'No autorizado' });
-    }
-
-    const driver = database.users.find(u => u.id === parseInt(driverId) && u.role === 'driver');
-
-    if (!driver) {
-      return res.status(404).json({ error: 'Conductor no encontrado' });
-    }
-
-    driver.currentLocation = { lat, lng };
-
-    res.json({ 
-      message: 'Ubicación actualizada',
-      location: driver.currentLocation
-    });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al actualizar ubicación', details: error.message });
-  }
-});
-
-// ============================================
-// ADMIN
-// ============================================
-
-app.get('/api/admin/stats', authenticateToken, (req, res) => {
-  try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'No autorizado' });
-    }
-
-    const allOrders = database.orders;
-    const completedOrders = allOrders.filter(o => o.status === 'delivered');
-    const today = new Date().toDateString();
-
-    const stats = {
-      totalOrders: allOrders.length,
-      completedOrders: completedOrders.length,
-      pendingOrders: allOrders.filter(o => o.status === 'pending').length,
-      activeOrders: allOrders.filter(o => !['delivered', 'cancelled'].includes(o.status)).length,
-      cancelledOrders: allOrders.filter(o => o.status === 'cancelled').length,
-      totalPlatformEarnings: completedOrders.reduce((sum, o) => sum + (o.platformEarnings || 0), 0),
-      totalCommissions: completedOrders.reduce((sum, o) => sum + (o.commission || 0), 0),
-      totalServiceFees: completedOrders.reduce((sum, o) => sum + (o.serviceFee || 0), 0),
-      totalDriverEarnings: completedOrders.reduce((sum, o) => sum + (o.driverEarnings || 0), 0),
-      totalRevenue: completedOrders.reduce((sum, o) => sum + o.total, 0),
-      totalDrivers: database.users.filter(u => u.role === 'driver' && u.approved).length,
-      pendingDrivers: database.users.filter(u => u.role === 'driver' && !u.approved).length,
-      availableDrivers: database.users.filter(u => u.role === 'driver' && u.available && u.approved).length,
-      totalClients: database.users.filter(u => u.role === 'client').length,
-      totalStores: database.stores.length,
-      totalProducts: database.products.length,
-      today: today,
-      ordersToday: allOrders.filter(o => new Date(o.createdAt).toDateString() === today).length,
-      earningsToday: completedOrders
-        .filter(o => o.deliveredAt && new Date(o.deliveredAt).toDateString() === today)
-        .reduce((sum, o) => sum + (o.platformEarnings || 0), 0),
-      averageOrderValue: completedOrders.length > 0 
-        ? completedOrders.reduce((sum, o) => sum + o.total, 0) / completedOrders.length 
-        : 0,
-      averagePlatformEarningPerOrder: completedOrders.length > 0
-        ? completedOrders.reduce((sum, o) => sum + (o.platformEarnings || 0), 0) / completedOrders.length
-        : 0
-    };
-
-    res.json({ stats });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al obtener estadísticas', details: error.message });
-  }
-});
-
-app.get('/api/admin/drivers/pending', authenticateToken, (req, res) => {
-  try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'No autorizado' });
-    }
-
-    const pendingDrivers = database.users
-      .filter(u => u.role === 'driver' && u.approved === false)
-      .map(({ password, ...driver }) => driver);
-
-    res.json({ drivers: pendingDrivers });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al obtener conductores', details: error.message });
-  }
-});
-
-app.put('/api/admin/drivers/:driverId/approve', authenticateToken, (req, res) => {
-  try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'No autorizado' });
-    }
-
-    const { driverId } = req.params;
-    const driver = database.users.find(u => u.id === parseInt(driverId) && u.role === 'driver');
-
-    if (!driver) {
-      return res.status(404).json({ error: 'Conductor no encontrado' });
-    }
-
-    driver.approved = true;
-    driver.available = true;
-
-    // 🔔 NOTIFICACIÓN: Conductor aprobado
-    notifyUser(driver.id, {
-      title: '¡Cuenta aprobada!',
-      message: 'Tu cuenta de conductor ha sido aprobada. Ya puedes comenzar a tomar pedidos.',
-      type: 'success',
-      timestamp: new Date()
-    });
-
-    saveDatabase();
-    res.json({
-      message: 'Conductor aprobado',
-      driver: { id: driver.id, name: driver.name, email: driver.email, approved: true }
-    });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al aprobar conductor', details: error.message });
-  }
-});
-
-app.delete('/api/admin/drivers/:driverId/reject', authenticateToken, (req, res) => {
-  try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'No autorizado' });
-    }
-
-    const { driverId } = req.params;
-    const driverIndex = database.users.findIndex(u => u.id === parseInt(driverId) && u.role === 'driver');
-
-    if (driverIndex === -1) {
-      return res.status(404).json({ error: 'Conductor no encontrado' });
-    }
-
-    const driver = database.users[driverIndex];
-
-    // 🔔 NOTIFICACIÓN: Conductor rechazado
-    notifyUser(driver.id, {
-      title: 'Solicitud rechazada',
-      message: 'Tu solicitud de conductor no ha sido aprobada. Contacta con soporte para más información.',
-      type: 'warning',
-      timestamp: new Date()
-    });
-
-    database.users.splice(driverIndex, 1);
-    saveDatabase();
-    res.json({ message: 'Conductor rechazado' });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al rechazar conductor', details: error.message });
-  }
-});
-
-app.get('/api/stats', authenticateToken, (req, res) => {
-  try {
-    const userId = req.user.id;
-    const userRole = req.user.role;
-    let stats = {};
-
-    if (userRole === 'client') {
-      const userOrders = database.orders.filter(o => o.customerId === userId);
-      stats = {
-        totalOrders: userOrders.length,
-        totalSpent: userOrders.reduce((sum, o) => sum + o.total, 0),
-        completedOrders: userOrders.filter(o => o.status === 'delivered').length,
-        cancelledOrders: userOrders.filter(o => o.status === 'cancelled').length
-      };
-    } else if (userRole === 'driver') {
-      const driver = database.users.find(u => u.id === userId);
-      const driverOrders = database.orders.filter(o => o.driverId === userId);
-      const completedOrders = driverOrders.filter(o => o.status === 'delivered');
-      
-      stats = {
-        totalDeliveries: driver.totalDeliveries,
-        totalEarnings: driver.totalEarnings,
-        rating: driver.rating,
-        activeOrders: driverOrders.filter(o => !['delivered', 'cancelled'].includes(o.status)).length,
-        completedToday: completedOrders.filter(o => {
-          const today = new Date().toDateString();
-          return o.deliveredAt && new Date(o.deliveredAt).toDateString() === today;
-        }).length,
-        earningsToday: completedOrders
-          .filter(o => {
-            const today = new Date().toDateString();
-            return o.deliveredAt && new Date(o.deliveredAt).toDateString() === today;
-          })
-          .reduce((sum, o) => sum + (o.driverEarnings || 0), 0)
-      };
-    } else if (userRole === 'store_owner') {
-      const userStores = database.stores.filter(s => s.ownerId === userId);
-      const storeIds = userStores.map(s => s.id);
-      const storeOrders = database.orders.filter(o => storeIds.includes(o.storeId));
-      const completedOrders = storeOrders.filter(o => o.status === 'delivered');
-      
-      stats = {
-        totalStores: userStores.length,
-        totalProducts: database.products.filter(p => storeIds.includes(p.storeId)).length,
-        totalOrders: storeOrders.length,
-        totalRevenue: completedOrders.reduce((sum, o) => sum + o.subtotal, 0),
-        activeOrders: storeOrders.filter(o => !['delivered', 'cancelled'].includes(o.status)).length,
-        ordersToday: storeOrders.filter(o => {
-          const today = new Date().toDateString();
-          return new Date(o.createdAt).toDateString() === today;
-        }).length
-      };
-    }
-
-    res.json({ stats });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al obtener estadísticas', details: error.message });
-  }
-});
-
-// ============================================
-// WEBSOCKET - CONSOLIDADO
-// ============================================
-
-io.on('connection', (socket) => {
-  console.log('🔌 Cliente conectado:', socket.id);
-
-  // Registrar usuario conectado
-  socket.on('register', (data) => {
-    const { userId } = data;
-    userSockets.set(userId.toString(), socket.id);
-    console.log(`✅ Usuario ${userId} registrado con socket ${socket.id}`);
-  });
-
-  // Suscripción por rol
-  socket.on('subscribe', (data) => {
-    const { userId, role } = data;
-    socket.join(`${role}:${userId}`);
-    userSockets.set(userId.toString(), socket.id);
-    console.log(`📡 Usuario ${userId} (${role}) suscrito`);
-  });
-
-  // Actualización de ubicación del conductor
-  socket.on('update_location', (data) => {
-    const { driverId, lat, lng } = data;
-    const driver = database.users.find(u => u.id === driverId);
-    if (driver) {
-      driver.currentLocation = { lat, lng };
-      io.emit('driver_location_update', { driverId, location: { lat, lng } });
-    }
-  });
-
-  // Desconexión
-  socket.on('disconnect', () => {
-    // Eliminar del mapa de usuarios conectados
-    for (const [userId, socketId] of userSockets.entries()) {
-      if (socketId === socket.id) {
-        userSockets.delete(userId);
-        console.log(`❌ Usuario ${userId} desconectado`);
-        break;
-      }
-    }
-    console.log('🔌 Cliente desconectado:', socket.id);
-  });
-});
-
-// ============================================
-// HEALTH CHECK Y 404
-// ============================================
-
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    timestamp: new Date(),
-    uptime: process.uptime(),
-    stores: database.stores.length,
-    products: database.products.length,
-    orders: database.orders.length,
-    connectedUsers: userSockets.size
-  });
-});
-
-app.use((req, res) => {
-
-// ============================================
-// RUTAS HTML
-// ============================================
-
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-app.get('/register', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'register.html'));
-});
-
-app.get('/cliente', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'cliente.html'));
-});
-
-app.get('/conductor', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'conductor.html'));
-});
-
-app.get('/tienda', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'tienda.html'));
-});
-
-app.get('/admin', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'admin.html'));
-});
-
-  res.status(404).json({ error: 'Ruta no encontrada' });
-});
-
-// ============================================
-// INICIAR SERVIDOR
-// ============================================
-
-server.listen(PORT, () => {
-  console.log(`\n${'='.repeat(60)}`);
-  console.log(`🚀 SERVIDOR DE DELIVERY INICIADO`);
-  console.log(`${'='.repeat(60)}`);
-  console.log(`📍 Puerto: ${PORT}`);
-  console.log(`📡 WebSocket: Habilitado`);
-  console.log(`🔔 Notificaciones: Activas`);
-  console.log(`💰 Comisión: ${COMMISSION_RATE * 100}% | Fee de servicio: $${SERVICE_FEE}`);
-  console.log(`🏪 Tiendas: ${database.stores.length} | 📦 Productos: ${database.products.length}`);
-  console.log(`\n📋 FLUJO DE ESTADOS DE PEDIDOS:`);
-  console.log(`   1. PENDING    → Cliente crea pedido`);
-  console.log(`   2. ACCEPTED   → Tienda acepta`);
-  console.log(`   3. PREPARING  → Tienda prepara`);
-  console.log(`   4. READY      → Listo para recoger`);
-  console.log(`   5. PICKED_UP  → Conductor recoge`);
-  console.log(`   6. ON_WAY     → En camino al cliente`);
-  console.log(`   7. DELIVERED  → ✅ Entregado`);
-  console.log(`\n🌐 RUTAS DISPONIBLES:`);
-  console.log(`   GET  /health              → Estado del servidor`);
-  console.log(`   POST /api/auth/register   → Registro de usuarios`);
-  console.log(`   POST /api/auth/login      → Inicio de sesión`);
-  console.log(`   GET  /api/stores          → Listar tiendas`);
-  console.log(`   GET  /api/orders          → Listar pedidos`);
-  console.log(`   POST /api/orders          → Crear pedido`);
-  console.log(`\n👥 USUARIOS DE PRUEBA:`);
-  console.log(`   Cliente:    cliente@delivery.com / cliente123`);
-  console.log(`   Conductor:  conductor@delivery.com / conductor123`);
-  console.log(`   Tienda:     tienda@delivery.com / tienda123`);
-  console.log(`   Admin:      admin@delivery.com / admin123`);
-  console.log(`${'='.repeat(60)}\n`);
-});
-
-module.exports = { app, server, io };
+    const store = database.
