@@ -1584,6 +1584,35 @@ app.get('/health', (req, res) => {
 });
 
 app.use((req, res) => {
+
+// ============================================
+// RUTAS HTML
+// ============================================
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.get('/register', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'register.html'));
+});
+
+app.get('/cliente', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'cliente.html'));
+});
+
+app.get('/conductor', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'conductor.html'));
+});
+
+app.get('/tienda', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'tienda.html'));
+});
+
+app.get('/admin', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
   res.status(404).json({ error: 'Ruta no encontrada' });
 });
 
