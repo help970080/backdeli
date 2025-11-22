@@ -1,93 +1,44 @@
 # ============================================
-# ARCHIVOS DE ENTORNO Y SEGURIDAD
+# ARCHIVOS SENSIBLES - NO SUBIR A GIT
 # ============================================
+
+# Variables de entorno
 .env
 .env.local
-.env.*.local
-*.pem
-*.key
-*.crt
+.env.production
 
-# ============================================
-# NODE MODULES
-# ============================================
+# Base de datos
+database.json
+*.db
+
+# Node modules
 node_modules/
+
+# Logs
+*.log
+logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-package-lock.json
-yarn.lock
 
-# ============================================
-# UPLOADS Y ARCHIVOS TEMPORALES
-# ============================================
-uploads/
-temp/
-tmp/
-*.tmp
-
-# ============================================
-# LOGS
-# ============================================
-logs/
-*.log
-npm-debug.log*
-
-# ============================================
-# BASE DE DATOS
-# ============================================
-database.json
-*.db
-*.sqlite
-*.sqlite3
-
-# ============================================
-# EDITORES E IDEs
-# ============================================
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
+# Archivos de sistema
 .DS_Store
 Thumbs.db
 
-# ============================================
-# BUILD Y DIST
-# ============================================
-dist/
-build/
+# Uploads (imágenes subidas)
+uploads/
+!uploads/.gitkeep
+
+# Archivos temporales
+*.tmp
+*.temp
 .cache/
 
-# ============================================
-# TESTING
-# ============================================
-coverage/
-.nyc_output/
-*.test.js
+# IDE
+.vscode/
+.idea/
+*.sublime-*
 
-# ============================================
-# SISTEMA OPERATIVO
-# ============================================
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-desktop.ini
-
-# ============================================
-# PM2
-# ============================================
-.pm2/
-ecosystem.config.js
-
-# ============================================
-# OTROS
-# ============================================
-.sass-cache/
-*.css.map
-*.sass.map
-*.scss.map
+# Build
+dist/
+build/

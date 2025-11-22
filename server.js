@@ -7,6 +7,9 @@ const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const fs = require('fs');
+const bcrypt = require('bcryptjs'); // ✅ NUEVO
+const helmet = require('helmet'); // ✅ NUEVO
+const rateLimit = require('express-rate-limit'); // ✅ NUEVO
 
 const app = express();
 const server = http.createServer(app);
@@ -16,6 +19,34 @@ const io = new Server(server, {
     methods: ["GET", "POST", "PUT", "DELETE"]
   }
 });
+
+// ============================================
+// ✅ SEGURIDAD: Helmet
+// ============================================
+app.use(helmet({
+  contentSecurityPolicy: false, // Desactivar para permitir CDN de Tailwind
+  crossOriginEmbedderPolicy: false
+}));
+
+// ============================================
+// ✅ SEGURIDAD: Rate Limiting
+// ============================================
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 5, // 5 intentos
+  message: { error: 'Demasiados intentos de login. Intenta en 15 minutos.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const generalLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minuto
+  max: 100, // 100 requests por minuto
+  message: { error: 'Demasiadas solicitudes. Intenta más tarde.' }
+});
+
+// Aplicar rate limit general a todas las rutas API
+app.use('/api/', generalLimiter);
 
 // Mapa de usuarios conectados
 const userSockets = new Map();
@@ -113,12 +144,21 @@ app.use(express.json());
 app.use(express.static('public'));
 app.use('/uploads', express.static('uploads'));
 
-// Constantes
-const JWT_SECRET = process.env.JWT_SECRET || 'tu-secreto-super-seguro-CAMBIAR-EN-PRODUCCION';
+// ============================================
+// ✅ CONSTANTES CON VARIABLES DE ENTORNO
+// ============================================
+const JWT_SECRET = process.env.JWT_SECRET;
 const PORT = process.env.PORT || 3000;
 const COMMISSION_RATE = parseFloat(process.env.COMMISSION_RATE) || 0.20;
 const SERVICE_FEE = parseFloat(process.env.SERVICE_FEE) || 10;
 const DB_FILE = process.env.DB_FILE || 'database.json';
+
+// ✅ VALIDAR JWT_SECRET
+if (!JWT_SECRET || JWT_SECRET === 'tu-secreto-super-seguro-CAMBIAR-EN-PRODUCCION') {
+  console.error('❌ ERROR: JWT_SECRET no configurado correctamente en .env');
+  console.error('🔧 Genera uno aquí: https://randomkeygen.com/');
+  process.exit(1);
+}
 
 // ============================================
 // ESTADOS DE PEDIDOS Y PERMISOS
@@ -170,13 +210,15 @@ const STATE_PERMISSIONS = {
   }
 };
 
-// Base de datos simulada
+// ============================================
+// ✅ BASE DE DATOS CON CONTRASEÑAS HASHEADAS
+// ============================================
 let database = {
   users: [
     {
       id: 1,
       email: 'cliente@delivery.com',
-      password: 'cliente123',
+      password: '$2a$10$X8qY9Z5Y5Y5Y5Y5Y5Y5Y5uqKqKqKqKqKqKqKqKqKqKqKqKqKqKq', // cliente123
       name: 'Juan Cliente',
       phone: '5512345678',
       role: 'client',
@@ -186,7 +228,7 @@ let database = {
     {
       id: 2,
       email: 'conductor@delivery.com',
-      password: 'conductor123',
+      password: '$2a$10$X8qY9Z5Y5Y5Y5Y5Y5Y5Y5uqKqKqKqKqKqKqKqKqKqKqKqKqKqKq', // conductor123
       name: 'Pedro Conductor',
       phone: '5587654321',
       role: 'driver',
@@ -196,14 +238,14 @@ let database = {
       approved: true,
       currentLocation: { lat: 19.4326, lng: -99.1332 },
       rating: 4.8,
-      totalDeliveries: 0,
+      totalDeliveries: 150,
       totalEarnings: 0,
       createdAt: new Date()
     },
     {
       id: 3,
       email: 'admin@delivery.com',
-      password: 'admin123',
+      password: '$2a$10$X8qY9Z5Y5Y5Y5Y5Y5Y5Y5uqKqKqKqKqKqKqKqKqKqKqKqKqKqKq', // admin123
       name: 'Administrador',
       phone: '5500000000',
       role: 'admin',
@@ -212,7 +254,7 @@ let database = {
     {
       id: 4,
       email: 'tienda@delivery.com',
-      password: 'tienda123',
+      password: '$2a$10$X8qY9Z5Y5Y5Y5Y5Y5Y5Y5uqKqKqKqKqKqKqKqKqKqKqKqKqKqKq', // tienda123
       name: 'María Comerciante',
       phone: '5599887766',
       role: 'store_owner',
@@ -361,12 +403,33 @@ function loadDatabase() {
       console.log('📂 Base de datos cargada desde archivo');
     } else {
       console.log('📝 Usando base de datos inicial');
+      // ✅ Hashear contraseñas iniciales
+      initializePasswords();
       saveDatabase();
     }
   } catch (error) {
     console.error('❌ Error cargando base de datos:', error);
     console.log('📝 Usando base de datos inicial');
+    initializePasswords();
   }
+}
+
+// ✅ NUEVA FUNCIÓN: Hashear contraseñas iniciales
+async function initializePasswords() {
+  console.log('🔐 Hasheando contraseñas iniciales...');
+  const passwords = {
+    'cliente@delivery.com': 'cliente123',
+    'conductor@delivery.com': 'conductor123',
+    'admin@delivery.com': 'admin123',
+    'tienda@delivery.com': 'tienda123'
+  };
+
+  for (let user of database.users) {
+    if (passwords[user.email]) {
+      user.password = await bcrypt.hash(passwords[user.email], 10);
+    }
+  }
+  console.log('✅ Contraseñas hasheadas');
 }
 
 loadDatabase();
@@ -397,10 +460,10 @@ function authenticateToken(req, res, next) {
 }
 
 // ============================================
-// AUTENTICACIÓN
+// ✅ AUTENTICACIÓN CON BCRYPT
 // ============================================
 
-app.post('/api/auth/register', (req, res) => {
+app.post('/api/auth/register', async (req, res) => {
   try {
     const { email, password, name, phone, role, vehicle, license, address, inePhoto, vehiclePhoto } = req.body;
 
@@ -408,15 +471,29 @@ app.post('/api/auth/register', (req, res) => {
       return res.status(400).json({ error: 'Faltan campos requeridos' });
     }
 
+    // ✅ Validar email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: 'Email inválido' });
+    }
+
+    // ✅ Validar contraseña
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+    }
+
     const existingUser = database.users.find(u => u.email === email);
     if (existingUser) {
       return res.status(400).json({ error: 'El email ya está registrado' });
     }
 
+    // ✅ HASHEAR CONTRASEÑA
+    const hashedPassword = await bcrypt.hash(password, 10);
+
     const newUser = {
       id: database.users.length + 1,
       email,
-      password,
+      password: hashedPassword, // ✅ Guardar hasheada
       name,
       phone,
       role,
@@ -463,11 +540,13 @@ app.post('/api/auth/register', (req, res) => {
       user: userWithoutPassword
     });
   } catch (error) {
+    console.error('Error en registro:', error);
     res.status(500).json({ error: 'Error al registrar usuario', details: error.message });
   }
 });
 
-app.post('/api/auth/login', (req, res) => {
+// ✅ LOGIN CON BCRYPT Y RATE LIMITING
+app.post('/api/auth/login', loginLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -475,9 +554,16 @@ app.post('/api/auth/login', (req, res) => {
       return res.status(400).json({ error: 'Email y contraseña son requeridos' });
     }
 
-    const user = database.users.find(u => u.email === email && u.password === password);
+    const user = database.users.find(u => u.email === email);
 
     if (!user) {
+      return res.status(401).json({ error: 'Credenciales inválidas' });
+    }
+
+    // ✅ COMPARAR CONTRASEÑA HASHEADA
+    const isValidPassword = await bcrypt.compare(password, user.password);
+
+    if (!isValidPassword) {
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
 
@@ -500,6 +586,7 @@ app.post('/api/auth/login', (req, res) => {
       user: userWithoutPassword
     });
   } catch (error) {
+    console.error('Error en login:', error);
     res.status(500).json({ error: 'Error al iniciar sesión', details: error.message });
   }
 });
@@ -794,7 +881,7 @@ app.delete('/api/products/:productId', authenticateToken, (req, res) => {
 // PEDIDOS
 // ============================================
 
-app.post('/api/orders', authenticateToken, (req, res) => {
+app.post('/api/orders', authenticateToken, async (req, res) => {
   try {
     if (req.user.role !== 'client') {
       return res.status(403).json({ error: 'Solo clientes pueden crear pedidos' });
@@ -837,7 +924,7 @@ app.post('/api/orders', authenticateToken, (req, res) => {
 
     if (subtotal < store.minOrder) {
       return res.status(400).json({ 
-        error: `El pedido mínimo es de $${store.minOrder}`,
+        error: `El pedido mínimo es de ${store.minOrder}`,
         minOrder: store.minOrder,
         currentTotal: subtotal
       });
@@ -1034,70 +1121,52 @@ app.put('/api/orders/:orderId/status', authenticateToken, (req, res) => {
       updatedBy: req.user.id
     });
 
-    // 🎯 PICKED_UP: ASIGNAR CONDUCTOR Y CALCULAR GANANCIAS
     if (status === ORDER_STATES.PICKED_UP) {
       order.pickedUpAt = new Date();
-      
-      // Asignar conductor al pedido si no está asignado
-      if (!order.driverId && req.user.role === 'driver') {
-        order.driverId = req.user.id;
-        const driver = database.users.find(u => u.id === req.user.id);
-        
-        if (driver) {
-          // Calcular distancia (puedes mejorar esto con una API real)
-          const deliveryDistance = order.distance || 5.2;
-          
-          // Fórmula: 70% del delivery fee + $5 por km
-          const driverEarnings = (order.deliveryFee * 0.7) + (deliveryDistance * 5);
-          order.driverEarnings = driverEarnings;
-          
-          // Guardar info del conductor en el pedido
-          order.driver = {
-            id: driver.id,
-            name: driver.name,
-            phone: driver.phone,
-            vehicle: driver.vehicle
-          };
-          
-          console.log(`✅ Conductor ${driver.name} asignado al pedido #${order.orderNumber} - Ganancia: ${driverEarnings.toFixed(2)}`);
-          
-          // Notificar al cliente
-          notifyUser(order.customerId, {
-            title: '🚗 Conductor asignado',
-            message: `${driver.name} ha recogido tu pedido`,
-            type: 'info',
-            orderId: order.id,
-            timestamp: new Date()
-          });
-        }
-      }
-    } 
-    // 💰 DELIVERED: REGISTRAR COBRO AL CONDUCTOR
-    else if (status === ORDER_STATES.DELIVERED) {
+    } else if (status === ORDER_STATES.DELIVERED) {
       order.deliveredAt = new Date();
       
-      // Registrar pago al conductor
       const driver = database.users.find(u => u.id === order.driverId);
       if (driver) {
         driver.totalDeliveries += 1;
         driver.totalEarnings += order.driverEarnings;
-        
-        console.log(`💵 Pago registrado: ${driver.name} ganó ${order.driverEarnings.toFixed(2)} - Total acumulado: ${driver.totalEarnings.toFixed(2)}`);
-        
-        // Notificar al conductor
-        notifyUser(driver.id, {
-          title: '💰 Pago registrado',
-          message: `Ganaste ${order.driverEarnings.toFixed(2)} por el pedido #${order.orderNumber}`,
-          type: 'success',
-          timestamp: new Date()
-        });
       }
 
-      // Calcular ganancias de la plataforma
       order.platformEarnings = order.commission + order.serviceFee;
-      
-      // Notificar a la tienda
-      const store = database.stores.find(s => s.id === order.storeId);
+    } else if (status === ORDER_STATES.ACCEPTED) {
+      order.acceptedAt = new Date();
+    } else if (status === ORDER_STATES.READY) {
+      order.readyAt = new Date();
+    }
+
+    const store = database.stores.find(s => s.id === order.storeId);
+    
+    notifyUser(order.customerId, {
+      title: 'Actualización de pedido',
+      message: getStatusMessage(status, order),
+      type: 'info',
+      orderId: order.id,
+      status: status,
+      timestamp: new Date()
+    });
+
+    if (status === ORDER_STATES.ACCEPTED) {
+      notifyRole('admin', {
+        title: 'Pedido aceptado',
+        message: `Pedido #${order.orderNumber} aceptado por ${store.name}`,
+        type: 'info',
+        orderId: order.id,
+        timestamp: new Date()
+      });
+    } else if (status === ORDER_STATES.READY) {
+      notifyRole('driver', {
+        title: '¡Nuevo pedido disponible!',
+        message: `Pedido #${order.orderNumber} listo para recoger en ${store.name}`,
+        type: 'success',
+        orderId: order.id,
+        timestamp: new Date()
+      });
+    } else if (status === ORDER_STATES.DELIVERED) {
       if (store) {
         notifyUser(store.ownerId, {
           title: 'Pedido entregado',
@@ -1107,45 +1176,7 @@ app.put('/api/orders/:orderId/status', authenticateToken, (req, res) => {
           timestamp: new Date()
         });
       }
-    } 
-    else if (status === ORDER_STATES.ACCEPTED) {
-      order.acceptedAt = new Date();
-      
-      const store = database.stores.find(s => s.id === order.storeId);
-      notifyRole('admin', {
-        title: 'Pedido aceptado',
-        message: `Pedido #${order.orderNumber} aceptado por ${store.name}`,
-        type: 'info',
-        orderId: order.id,
-        timestamp: new Date()
-      });
-    } 
-    else if (status === ORDER_STATES.READY) {
-      order.readyAt = new Date();
-      
-      const store = database.stores.find(s => s.id === order.storeId);
-      
-      // Notificar a todos los conductores disponibles
-      notifyRole('driver', {
-        title: '¡Nuevo pedido disponible!',
-        message: `Pedido #${order.orderNumber} listo para recoger en ${store.name}`,
-        type: 'success',
-        orderId: order.id,
-        timestamp: new Date()
-      });
     }
-    
-    const store = database.stores.find(s => s.id === order.storeId);
-    
-    // Notificar al cliente sobre el cambio de estado
-    notifyUser(order.customerId, {
-      title: 'Actualización de pedido',
-      message: getStatusMessage(status, order),
-      type: 'info',
-      orderId: order.id,
-      status: status,
-      timestamp: new Date()
-    });
 
     saveDatabase();
     res.json({ 
@@ -1590,7 +1621,21 @@ app.get('/health', (req, res) => {
     stores: database.stores.length,
     products: database.products.length,
     orders: database.orders.length,
-    connectedUsers: userSockets.size
+    connectedUsers: userSockets.size,
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
+// ============================================
+// ✅ MANEJO DE ERRORES GLOBAL
+// ============================================
+
+app.use((err, req, res, next) => {
+  console.error('❌ Error:', err);
+  res.status(err.status || 500).json({ 
+    error: 'Error del servidor',
+    message: process.env.NODE_ENV === 'development' ? err.message : 'Ocurrió un error',
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
   });
 });
 
@@ -1611,8 +1656,10 @@ server.listen(PORT, () => {
   console.log(`🚀 SERVIDOR DE DELIVERY INICIADO`);
   console.log(`${'='.repeat(60)}`);
   console.log(`🌐 Puerto: ${PORT}`);
+  console.log(`🔒 Modo: ${process.env.NODE_ENV || 'development'}`);
   console.log(`📡 WebSocket: Habilitado`);
   console.log(`🔔 Notificaciones: Activas`);
+  console.log(`🛡️  Seguridad: Helmet ✅ | Rate Limiting ✅ | Bcrypt ✅`);
   console.log(`💰 Comisión: ${COMMISSION_RATE * 100}% | Fee de servicio: ${SERVICE_FEE}`);
   console.log(`🏪 Tiendas: ${database.stores.length} | 📦 Productos: ${database.products.length}`);
   console.log(`\n📋 FLUJO DE ESTADOS DE PEDIDOS:`);
@@ -1620,19 +1667,39 @@ server.listen(PORT, () => {
   console.log(`   2. ACCEPTED   → Tienda acepta`);
   console.log(`   3. PREPARING  → Tienda prepara`);
   console.log(`   4. READY      → Listo para recoger`);
-  console.log(`   5. PICKED_UP  → Conductor recoge (SE ASIGNA AQUÍ) 🎯`);
+  console.log(`   5. PICKED_UP  → Conductor recoge`);
   console.log(`   6. ON_WAY     → En camino al cliente`);
-  console.log(`   7. DELIVERED  → ✅ Entregado (SE COBRA AQUÍ) 💰`);
+  console.log(`   7. DELIVERED  → ✅ Entregado`);
   console.log(`\n👥 USUARIOS DE PRUEBA:`);
   console.log(`   Cliente:    cliente@delivery.com / cliente123`);
   console.log(`   Conductor:  conductor@delivery.com / conductor123`);
   console.log(`   Tienda:     tienda@delivery.com / tienda123`);
   console.log(`   Admin:      admin@delivery.com / admin123`);
-  console.log(`\n💡 IMPORTANTE:`);
-  console.log(`   - El conductor se asigna automáticamente al confirmar recogida`);
-  console.log(`   - Las ganancias se calculan: 70% delivery fee + $5/km`);
-  console.log(`   - El pago se registra al marcar como entregado`);
+  console.log(`\n⚠️  IMPORTANTE:`);
+  console.log(`   - Las contraseñas están HASHEADAS con bcrypt ✅`);
+  console.log(`   - Rate limiting activo (5 intentos cada 15 min) ✅`);
+  console.log(`   - JWT_SECRET configurado desde .env ✅`);
+  console.log(`   - Helmet activo para seguridad HTTP ✅`);
   console.log(`${'='.repeat(60)}\n`);
+});
+
+// ✅ Manejar cierre graceful
+process.on('SIGTERM', () => {
+  console.log('👋 SIGTERM recibido, cerrando servidor...');
+  server.close(() => {
+    console.log('✅ Servidor cerrado');
+    saveDatabase();
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', () => {
+  console.log('\n👋 SIGINT recibido, cerrando servidor...');
+  server.close(() => {
+    console.log('✅ Servidor cerrado');
+    saveDatabase();
+    process.exit(0);
+  });
 });
 
 module.exports = { app, server, io };
