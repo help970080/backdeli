@@ -196,7 +196,7 @@ let database = {
       approved: true,
       currentLocation: { lat: 19.4326, lng: -99.1332 },
       rating: 4.8,
-      totalDeliveries: 150,
+      totalDeliveries: 0,
       totalEarnings: 0,
       createdAt: new Date()
     },
@@ -1034,52 +1034,70 @@ app.put('/api/orders/:orderId/status', authenticateToken, (req, res) => {
       updatedBy: req.user.id
     });
 
+    // 🎯 PICKED_UP: ASIGNAR CONDUCTOR Y CALCULAR GANANCIAS
     if (status === ORDER_STATES.PICKED_UP) {
       order.pickedUpAt = new Date();
-    } else if (status === ORDER_STATES.DELIVERED) {
+      
+      // Asignar conductor al pedido si no está asignado
+      if (!order.driverId && req.user.role === 'driver') {
+        order.driverId = req.user.id;
+        const driver = database.users.find(u => u.id === req.user.id);
+        
+        if (driver) {
+          // Calcular distancia (puedes mejorar esto con una API real)
+          const deliveryDistance = order.distance || 5.2;
+          
+          // Fórmula: 70% del delivery fee + $5 por km
+          const driverEarnings = (order.deliveryFee * 0.7) + (deliveryDistance * 5);
+          order.driverEarnings = driverEarnings;
+          
+          // Guardar info del conductor en el pedido
+          order.driver = {
+            id: driver.id,
+            name: driver.name,
+            phone: driver.phone,
+            vehicle: driver.vehicle
+          };
+          
+          console.log(`✅ Conductor ${driver.name} asignado al pedido #${order.orderNumber} - Ganancia: ${driverEarnings.toFixed(2)}`);
+          
+          // Notificar al cliente
+          notifyUser(order.customerId, {
+            title: '🚗 Conductor asignado',
+            message: `${driver.name} ha recogido tu pedido`,
+            type: 'info',
+            orderId: order.id,
+            timestamp: new Date()
+          });
+        }
+      }
+    } 
+    // 💰 DELIVERED: REGISTRAR COBRO AL CONDUCTOR
+    else if (status === ORDER_STATES.DELIVERED) {
       order.deliveredAt = new Date();
       
+      // Registrar pago al conductor
       const driver = database.users.find(u => u.id === order.driverId);
       if (driver) {
         driver.totalDeliveries += 1;
         driver.totalEarnings += order.driverEarnings;
+        
+        console.log(`💵 Pago registrado: ${driver.name} ganó ${order.driverEarnings.toFixed(2)} - Total acumulado: ${driver.totalEarnings.toFixed(2)}`);
+        
+        // Notificar al conductor
+        notifyUser(driver.id, {
+          title: '💰 Pago registrado',
+          message: `Ganaste ${order.driverEarnings.toFixed(2)} por el pedido #${order.orderNumber}`,
+          type: 'success',
+          timestamp: new Date()
+        });
       }
 
+      // Calcular ganancias de la plataforma
       order.platformEarnings = order.commission + order.serviceFee;
-    } else if (status === ORDER_STATES.ACCEPTED) {
-      order.acceptedAt = new Date();
-    } else if (status === ORDER_STATES.READY) {
-      order.readyAt = new Date();
-    }
-
-    const store = database.stores.find(s => s.id === order.storeId);
-    
-    notifyUser(order.customerId, {
-      title: 'Actualización de pedido',
-      message: getStatusMessage(status, order),
-      type: 'info',
-      orderId: order.id,
-      status: status,
-      timestamp: new Date()
-    });
-
-    if (status === ORDER_STATES.ACCEPTED) {
-      notifyRole('admin', {
-        title: 'Pedido aceptado',
-        message: `Pedido #${order.orderNumber} aceptado por ${store.name}`,
-        type: 'info',
-        orderId: order.id,
-        timestamp: new Date()
-      });
-    } else if (status === ORDER_STATES.READY) {
-      notifyRole('driver', {
-        title: '¡Nuevo pedido disponible!',
-        message: `Pedido #${order.orderNumber} listo para recoger en ${store.name}`,
-        type: 'success',
-        orderId: order.id,
-        timestamp: new Date()
-      });
-    } else if (status === ORDER_STATES.DELIVERED) {
+      
+      // Notificar a la tienda
+      const store = database.stores.find(s => s.id === order.storeId);
       if (store) {
         notifyUser(store.ownerId, {
           title: 'Pedido entregado',
@@ -1089,7 +1107,45 @@ app.put('/api/orders/:orderId/status', authenticateToken, (req, res) => {
           timestamp: new Date()
         });
       }
+    } 
+    else if (status === ORDER_STATES.ACCEPTED) {
+      order.acceptedAt = new Date();
+      
+      const store = database.stores.find(s => s.id === order.storeId);
+      notifyRole('admin', {
+        title: 'Pedido aceptado',
+        message: `Pedido #${order.orderNumber} aceptado por ${store.name}`,
+        type: 'info',
+        orderId: order.id,
+        timestamp: new Date()
+      });
+    } 
+    else if (status === ORDER_STATES.READY) {
+      order.readyAt = new Date();
+      
+      const store = database.stores.find(s => s.id === order.storeId);
+      
+      // Notificar a todos los conductores disponibles
+      notifyRole('driver', {
+        title: '¡Nuevo pedido disponible!',
+        message: `Pedido #${order.orderNumber} listo para recoger en ${store.name}`,
+        type: 'success',
+        orderId: order.id,
+        timestamp: new Date()
+      });
     }
+    
+    const store = database.stores.find(s => s.id === order.storeId);
+    
+    // Notificar al cliente sobre el cambio de estado
+    notifyUser(order.customerId, {
+      title: 'Actualización de pedido',
+      message: getStatusMessage(status, order),
+      type: 'info',
+      orderId: order.id,
+      status: status,
+      timestamp: new Date()
+    });
 
     saveDatabase();
     res.json({ 
@@ -1564,14 +1620,18 @@ server.listen(PORT, () => {
   console.log(`   2. ACCEPTED   → Tienda acepta`);
   console.log(`   3. PREPARING  → Tienda prepara`);
   console.log(`   4. READY      → Listo para recoger`);
-  console.log(`   5. PICKED_UP  → Conductor recoge`);
+  console.log(`   5. PICKED_UP  → Conductor recoge (SE ASIGNA AQUÍ) 🎯`);
   console.log(`   6. ON_WAY     → En camino al cliente`);
-  console.log(`   7. DELIVERED  → ✅ Entregado`);
+  console.log(`   7. DELIVERED  → ✅ Entregado (SE COBRA AQUÍ) 💰`);
   console.log(`\n👥 USUARIOS DE PRUEBA:`);
   console.log(`   Cliente:    cliente@delivery.com / cliente123`);
   console.log(`   Conductor:  conductor@delivery.com / conductor123`);
   console.log(`   Tienda:     tienda@delivery.com / tienda123`);
   console.log(`   Admin:      admin@delivery.com / admin123`);
+  console.log(`\n💡 IMPORTANTE:`);
+  console.log(`   - El conductor se asigna automáticamente al confirmar recogida`);
+  console.log(`   - Las ganancias se calculan: 70% delivery fee + $5/km`);
+  console.log(`   - El pago se registra al marcar como entregado`);
   console.log(`${'='.repeat(60)}\n`);
 });
 
