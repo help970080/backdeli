@@ -149,6 +149,7 @@
             }).format(amount || 0);
         }
 
+        // ✅ CORREGIDO: Usar 'accepted' en lugar de 'confirmed'
         async function updateOrderStatus(orderId, newStatus) {
             try {
                 await apiCall(`/orders/${orderId}/status`, 'PUT', { 
@@ -162,9 +163,10 @@
             }
         }
 
+        // ✅ CORREGIDO: Cambiar a 'accepted' en lugar de 'confirmed'
         async function acceptOrder(orderId) {
             if (confirm('¿Confirmar este pedido?')) {
-                await updateOrderStatus(orderId, 'confirmed');
+                await updateOrderStatus(orderId, 'accepted');
             }
         }
 
@@ -207,9 +209,9 @@
                 'pending': { text: 'Aceptar Pedido', nextStatus: 'accepted', color: 'bg-blue-600 hover:bg-blue-700' },
                 'accepted': { text: 'Comenzar Preparación', nextStatus: 'preparing', color: 'bg-indigo-600 hover:bg-indigo-700' },
                 'preparing': { text: 'Marcar Listo', nextStatus: 'ready', color: 'bg-purple-600 hover:bg-purple-700' },
-                'ready': null, // Espera conductor
-                'picked_up': null, // Conductor lo tiene
-                'on_way': null, // Conductor entregando
+                'ready': null,
+                'picked_up': null,
+                'on_way': null,
                 'delivered': null,
                 'cancelled': null
             };
@@ -480,7 +482,9 @@
                         <div class="mb-6">
                             <h3 class="text-2xl font-bold text-gray-800 mb-4">Pedidos Activos (${activeOrders.length})</h3>
                             <div class="grid md:grid-cols-2 gap-4">
-                                ${activeOrders.map(order => `
+                                ${activeOrders.map(order => {
+                                    const nextAction = getNextAction(order.status);
+                                    return `
                                     <div class="bg-white rounded-xl shadow-lg p-6">
                                         <div class="flex justify-between items-start mb-4">
                                             <div>
@@ -510,8 +514,14 @@
                                             </div>
                                         ` : ''}
                                         
-                                        <!-- Botones de acción -->
-                                        ${order.status === 'pending' ? `
+                                        ${nextAction ? `
+                                            <button 
+                                                onclick="updateOrderStatus(${order.id}, '${nextAction.nextStatus}')"
+                                                class="w-full mt-4 ${nextAction.color} text-white font-semibold py-3 rounded-lg transition"
+                                            >
+                                                ${nextAction.text}
+                                            </button>
+                                        ` : order.status === 'pending' ? `
                                             <div class="mt-4 grid grid-cols-2 gap-3">
                                                 <button 
                                                     onclick="acceptOrder(${order.id})"
@@ -526,21 +536,9 @@
                                                     ✗ Rechazar
                                                 </button>
                                             </div>
-                                        ` : order.status === 'confirmed' ? `
-                                            <div class="mt-4 text-center py-2 bg-blue-50 border border-blue-200 rounded text-sm text-blue-700">
-                                                ⏳ Esperando que un conductor acepte...
-                                            </div>
-                                        ` : order.status === 'assigned' ? `
-                                            <div class="mt-4 text-center py-2 bg-purple-50 border border-purple-200 rounded text-sm text-purple-700">
-                                                🚗 Conductor asignado - En camino
-                                            </div>
-                                        ` : order.status === 'picked_up' ? `
-                                            <div class="mt-4 text-center py-2 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-700">
-                                                📦 Pedido recogido - En entrega
-                                            </div>
                                         ` : ''}
                                     </div>
-                                `).join('')}
+                                `}).join('')}
                             </div>
                         </div>
                     ` : ''}
