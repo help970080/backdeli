@@ -234,15 +234,6 @@ let database = {
       isOpen: true,
       ownerId: 4,
       location: { lat: 19.4326, lng: -99.1332, address: 'Av. Reforma 123' },
-      schedule: {
-        monday: { open: '09:00', close: '22:00' },
-        tuesday: { open: '09:00', close: '22:00' },
-        wednesday: { open: '09:00', close: '22:00' },
-        thursday: { open: '09:00', close: '22:00' },
-        friday: { open: '09:00', close: '23:00' },
-        saturday: { open: '10:00', close: '23:00' },
-        sunday: { open: '10:00', close: '21:00' }
-      },
       createdAt: new Date()
     },
     {
@@ -368,10 +359,6 @@ function loadDatabase() {
       const data = fs.readFileSync(DB_FILE, 'utf8');
       database = JSON.parse(data);
       console.log('📂 Base de datos cargada desde archivo');
-      console.log(`   👥 Usuarios: ${database.users.length}`);
-      console.log(`   🏪 Tiendas: ${database.stores.length}`);
-      console.log(`   📦 Productos: ${database.products.length}`);
-      console.log(`   📋 Pedidos: ${database.orders.length}`);
     } else {
       console.log('📝 Usando base de datos inicial');
       saveDatabase();
@@ -382,10 +369,8 @@ function loadDatabase() {
   }
 }
 
-// Cargar base de datos al iniciar
 loadDatabase();
 
-// Guardar automáticamente cada 5 minutos
 setInterval(() => {
   saveDatabase();
 }, 5 * 60 * 1000);
@@ -462,7 +447,6 @@ app.post('/api/auth/register', (req, res) => {
       { expiresIn: '24h' }
     );
 
-    // Notificar al admin si es un conductor nuevo
     if (role === 'driver') {
       notifyRole('admin', {
         title: 'Nuevo conductor registrado',
@@ -520,7 +504,6 @@ app.post('/api/auth/login', (req, res) => {
   }
 });
 
-// ✅ CORREGIDO: Endpoint que usan los HTML
 app.get('/api/auth/me', authenticateToken, (req, res) => {
   try {
     const user = database.users.find(u => u.id === req.user.id);
@@ -535,7 +518,6 @@ app.get('/api/auth/me', authenticateToken, (req, res) => {
   }
 });
 
-// ✅ ALIAS para mantener compatibilidad
 app.get('/api/users/profile', authenticateToken, (req, res) => {
   try {
     const user = database.users.find(u => u.id === req.user.id);
@@ -572,6 +554,258 @@ app.get('/api/stores', (req, res) => {
 app.get('/api/stores/:storeId', (req, res) => {
   try {
     const { storeId } = req.params;
+    const store = database.stores.find(s => s.id === parseInt(storeId));
+
+    if (!store) {
+      return res.status(404).json({ error: 'Tienda no encontrada' });
+    }
+
+    const products = database.products.filter(p => p.storeId === store.id);
+
+    res.json({ store, products });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener tienda', details: error.message });
+  }
+});
+
+app.post('/api/stores', authenticateToken, upload.single('image'), (req, res) => {
+  try {
+    if (req.user.role !== 'store_owner' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    const { name, description, category, deliveryTime, deliveryFee, minOrder, address, lat, lng } = req.body;
+
+    const newStore = {
+      id: database.stores.length + 1,
+      name,
+      description,
+      category,
+      image: req.file ? `/uploads/stores/${req.file.filename}` : null,
+      rating: 5.0,
+      deliveryTime,
+      deliveryFee: parseFloat(deliveryFee),
+      minOrder: parseFloat(minOrder),
+      isOpen: true,
+      ownerId: req.user.id,
+      location: { lat: parseFloat(lat), lng: parseFloat(lng), address },
+      createdAt: new Date()
+    };
+
+    database.stores.push(newStore);
+    saveDatabase();
+
+    res.status(201).json({ 
+      message: 'Tienda creada exitosamente',
+      store: newStore 
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al crear tienda', details: error.message });
+  }
+});
+
+app.put('/api/stores/:storeId', authenticateToken, upload.single('image'), (req, res) => {
+  try {
+    const { storeId } = req.params;
+    const store = database.stores.find(s => s.id === parseInt(storeId));
+
+    if (!store) {
+      return res.status(404).json({ error: 'Tienda no encontrada' });
+    }
+
+    if (store.ownerId !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    const { name, description, category, deliveryTime, deliveryFee, minOrder, isOpen, address, lat, lng } = req.body;
+
+    if (name) store.name = name;
+    if (description) store.description = description;
+    if (category) store.category = category;
+    if (deliveryTime) store.deliveryTime = deliveryTime;
+    if (deliveryFee) store.deliveryFee = parseFloat(deliveryFee);
+    if (minOrder) store.minOrder = parseFloat(minOrder);
+    if (typeof isOpen !== 'undefined') store.isOpen = isOpen === 'true' || isOpen === true;
+    if (req.file) store.image = `/uploads/stores/${req.file.filename}`;
+    if (address || lat || lng) {
+      store.location = {
+        lat: lat ? parseFloat(lat) : store.location.lat,
+        lng: lng ? parseFloat(lng) : store.location.lng,
+        address: address || store.location.address
+      };
+    }
+
+    saveDatabase();
+    res.json({ 
+      message: 'Tienda actualizada exitosamente',
+      store 
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al actualizar tienda', details: error.message });
+  }
+});
+
+app.delete('/api/stores/:storeId', authenticateToken, (req, res) => {
+  try {
+    const { storeId } = req.params;
+    const storeIndex = database.stores.findIndex(s => s.id === parseInt(storeId));
+
+    if (storeIndex === -1) {
+      return res.status(404).json({ error: 'Tienda no encontrada' });
+    }
+
+    const store = database.stores[storeIndex];
+
+    if (store.ownerId !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    database.stores.splice(storeIndex, 1);
+    database.products = database.products.filter(p => p.storeId !== parseInt(storeId));
+    saveDatabase();
+
+    res.json({ message: 'Tienda eliminada exitosamente' });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al eliminar tienda', details: error.message });
+  }
+});
+
+// ============================================
+// PRODUCTOS
+// ============================================
+
+app.get('/api/stores/:storeId/products', (req, res) => {
+  try {
+    const { storeId } = req.params;
+    const { category } = req.query;
+    
+    let products = database.products.filter(p => p.storeId === parseInt(storeId));
+
+    if (category) {
+      products = products.filter(p => p.category === category);
+    }
+
+    res.json({ products });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener productos', details: error.message });
+  }
+});
+
+app.post('/api/products', authenticateToken, upload.single('image'), (req, res) => {
+  try {
+    if (req.user.role !== 'store_owner' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    const { storeId, name, description, price, category, preparationTime } = req.body;
+    
+    const store = database.stores.find(s => s.id === parseInt(storeId));
+    if (!store) {
+      return res.status(404).json({ error: 'Tienda no encontrada' });
+    }
+
+    if (store.ownerId !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'No autorizado para esta tienda' });
+    }
+
+    const newProduct = {
+      id: database.products.length + 1,
+      storeId: parseInt(storeId),
+      name,
+      description,
+      price: parseFloat(price),
+      image: req.file ? `/uploads/products/${req.file.filename}` : null,
+      category,
+      available: true,
+      preparationTime: parseInt(preparationTime) || 15
+    };
+
+    database.products.push(newProduct);
+    saveDatabase();
+
+    res.status(201).json({ 
+      message: 'Producto creado exitosamente',
+      product: newProduct 
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al crear producto', details: error.message });
+  }
+});
+
+app.put('/api/products/:productId', authenticateToken, upload.single('image'), (req, res) => {
+  try {
+    const { productId } = req.params;
+    const product = database.products.find(p => p.id === parseInt(productId));
+
+    if (!product) {
+      return res.status(404).json({ error: 'Producto no encontrado' });
+    }
+
+    const store = database.stores.find(s => s.id === product.storeId);
+    if (store.ownerId !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    const { name, description, price, category, available, preparationTime } = req.body;
+
+    if (name) product.name = name;
+    if (description) product.description = description;
+    if (price) product.price = parseFloat(price);
+    if (category) product.category = category;
+    if (typeof available !== 'undefined') product.available = available === 'true' || available === true;
+    if (preparationTime) product.preparationTime = parseInt(preparationTime);
+    if (req.file) product.image = `/uploads/products/${req.file.filename}`;
+
+    saveDatabase();
+    res.json({ 
+      message: 'Producto actualizado exitosamente',
+      product 
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al actualizar producto', details: error.message });
+  }
+});
+
+app.delete('/api/products/:productId', authenticateToken, (req, res) => {
+  try {
+    const { productId } = req.params;
+    const productIndex = database.products.findIndex(p => p.id === parseInt(productId));
+
+    if (productIndex === -1) {
+      return res.status(404).json({ error: 'Producto no encontrado' });
+    }
+
+    const product = database.products[productIndex];
+    const store = database.stores.find(s => s.id === product.storeId);
+
+    if (store.ownerId !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    database.products.splice(productIndex, 1);
+    saveDatabase();
+    res.json({ message: 'Producto eliminado exitosamente' });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al eliminar producto', details: error.message });
+  }
+});
+
+// ============================================
+// PEDIDOS
+// ============================================
+
+app.post('/api/orders', authenticateToken, (req, res) => {
+  try {
+    if (req.user.role !== 'client') {
+      return res.status(403).json({ error: 'Solo clientes pueden crear pedidos' });
+    }
+
+    const { storeId, items, deliveryAddress, paymentMethod, notes } = req.body;
+
+    if (!items || items.length === 0) {
+      return res.status(400).json({ error: 'El pedido debe tener al menos un producto' });
+    }
+
     const store = database.stores.find(s => s.id === storeId);
     if (!store) {
       return res.status(404).json({ error: 'Tienda no encontrada' });
@@ -603,7 +837,7 @@ app.get('/api/stores/:storeId', (req, res) => {
 
     if (subtotal < store.minOrder) {
       return res.status(400).json({ 
-        error: `El pedido mínimo es de ${store.minOrder}`,
+        error: `El pedido mínimo es de $${store.minOrder}`,
         minOrder: store.minOrder,
         currentTotal: subtotal
       });
@@ -612,15 +846,12 @@ app.get('/api/stores/:storeId', (req, res) => {
     const deliveryFee = store.deliveryFee;
     const total = subtotal + deliveryFee + SERVICE_FEE;
     const commission = subtotal * COMMISSION_RATE;
-
-    // ✅ Generar número de orden único
     const orderNumber = database.orders.length + 1;
-
     const customer = database.users.find(u => u.id === req.user.id);
 
     const newOrder = {
       id: database.orders.length + 1,
-      orderNumber: orderNumber, // ✅ AGREGADO
+      orderNumber: orderNumber,
       customerId: req.user.id,
       storeId,
       storeName: store.name,
@@ -634,10 +865,9 @@ app.get('/api/stores/:storeId', (req, res) => {
       deliveryAddress,
       paymentMethod,
       notes: notes || '',
-      distance: 5.2, // ✅ AGREGADO
-      driverEarnings: 0, // ✅ AGREGADO
+      distance: 5.2,
+      driverEarnings: 0,
       createdAt: new Date(),
-      // ✅ AGREGADO: Información completa para frontend
       customer: {
         id: customer.id,
         name: customer.name,
@@ -660,7 +890,6 @@ app.get('/api/stores/:storeId', (req, res) => {
     database.orders.push(newOrder);
     saveDatabase();
 
-    // Notificar al dueño de la tienda
     notifyUser(store.ownerId, {
       title: '¡Nuevo pedido!',
       message: `Pedido #${newOrder.orderNumber} - ${total.toFixed(2)}`,
@@ -669,7 +898,6 @@ app.get('/api/stores/:storeId', (req, res) => {
       timestamp: new Date()
     });
 
-    // Notificar al admin
     notifyRole('admin', {
       title: 'Nuevo pedido en plataforma',
       message: `Pedido #${newOrder.orderNumber} en ${store.name}`,
@@ -711,7 +939,6 @@ app.get('/api/orders', authenticateToken, (req, res) => {
       orders = orders.filter(o => o.status === status);
     }
 
-    // ✅ CORREGIDO: Enriquecer órdenes con información completa
     orders = orders.map(order => {
       const store = database.stores.find(s => s.id === order.storeId);
       const customer = database.users.find(u => u.id === order.customerId);
@@ -807,7 +1034,6 @@ app.put('/api/orders/:orderId/status', authenticateToken, (req, res) => {
       updatedBy: req.user.id
     });
 
-    // Actualizar campos específicos según el estado
     if (status === ORDER_STATES.PICKED_UP) {
       order.pickedUpAt = new Date();
     } else if (status === ORDER_STATES.DELIVERED) {
@@ -826,9 +1052,7 @@ app.put('/api/orders/:orderId/status', authenticateToken, (req, res) => {
       order.readyAt = new Date();
     }
 
-    // Notificaciones
     const store = database.stores.find(s => s.id === order.storeId);
-    const customer = database.users.find(u => u.id === order.customerId);
     
     notifyUser(order.customerId, {
       title: 'Actualización de pedido',
@@ -847,8 +1071,7 @@ app.put('/api/orders/:orderId/status', authenticateToken, (req, res) => {
         orderId: order.id,
         timestamp: new Date()
       });
-    } 
-    else if (status === ORDER_STATES.READY) {
+    } else if (status === ORDER_STATES.READY) {
       notifyRole('driver', {
         title: '¡Nuevo pedido disponible!',
         message: `Pedido #${order.orderNumber} listo para recoger en ${store.name}`,
@@ -856,27 +1079,7 @@ app.put('/api/orders/:orderId/status', authenticateToken, (req, res) => {
         orderId: order.id,
         timestamp: new Date()
       });
-      
-      notifyRole('admin', {
-        title: 'Pedido listo',
-        message: `Pedido #${order.orderNumber} listo para entrega`,
-        type: 'info',
-        orderId: order.id,
-        timestamp: new Date()
-      });
-    }
-    else if (status === ORDER_STATES.PICKED_UP) {
-      if (store) {
-        notifyUser(store.ownerId, {
-          title: 'Pedido recogido',
-          message: `Pedido #${order.orderNumber} recogido por el conductor`,
-          type: 'info',
-          orderId: order.id,
-          timestamp: new Date()
-        });
-      }
-    }
-    else if (status === ORDER_STATES.DELIVERED) {
+    } else if (status === ORDER_STATES.DELIVERED) {
       if (store) {
         notifyUser(store.ownerId, {
           title: 'Pedido entregado',
@@ -886,45 +1089,6 @@ app.put('/api/orders/:orderId/status', authenticateToken, (req, res) => {
           timestamp: new Date()
         });
       }
-
-      if (order.driverId) {
-        notifyUser(order.driverId, {
-          title: 'Entrega completada',
-          message: `Ganaste ${order.driverEarnings.toFixed(2)} por esta entrega`,
-          type: 'success',
-          orderId: order.id,
-          timestamp: new Date()
-        });
-      }
-
-      notifyRole('admin', {
-        title: 'Pedido completado',
-        message: `Pedido #${order.orderNumber} entregado - Ganancia: ${order.platformEarnings.toFixed(2)}`,
-        type: 'success',
-        orderId: order.id,
-        timestamp: new Date()
-      });
-    }
-    else if (status === ORDER_STATES.CANCELLED) {
-      const usersToNotify = [order.customerId];
-      if (store) usersToNotify.push(store.ownerId);
-      if (order.driverId) usersToNotify.push(order.driverId);
-
-      notifyMultiple(usersToNotify, {
-        title: 'Pedido cancelado',
-        message: `El pedido #${order.orderNumber} ha sido cancelado`,
-        type: 'warning',
-        orderId: order.id,
-        timestamp: new Date()
-      });
-
-      notifyRole('admin', {
-        title: 'Pedido cancelado',
-        message: `Pedido #${order.orderNumber} cancelado en estado ${oldStatus}`,
-        type: 'warning',
-        orderId: order.id,
-        timestamp: new Date()
-      });
     }
 
     saveDatabase();
@@ -989,24 +1153,6 @@ app.put('/api/orders/:orderId/assign', authenticateToken, (req, res) => {
     notifyUser(order.customerId, {
       title: 'Conductor asignado',
       message: `${driver.name} recogerá tu pedido`,
-      type: 'info',
-      orderId: order.id,
-      timestamp: new Date()
-    });
-
-    if (store) {
-      notifyUser(store.ownerId, {
-        title: 'Conductor asignado',
-        message: `${driver.name} recogerá el pedido #${order.orderNumber}`,
-        type: 'info',
-        orderId: order.id,
-        timestamp: new Date()
-      });
-    }
-
-    notifyRole('admin', {
-      title: 'Pedido asignado',
-      message: `Pedido #${order.orderNumber} asignado a ${driver.name}`,
       type: 'info',
       orderId: order.id,
       timestamp: new Date()
@@ -1234,7 +1380,7 @@ app.delete('/api/admin/drivers/:driverId/reject', authenticateToken, (req, res) 
 
     notifyUser(driver.id, {
       title: 'Solicitud rechazada',
-      message: 'Tu solicitud de conductor no ha sido aprobada. Contacta con soporte para más información.',
+      message: 'Tu solicitud de conductor no ha sido aprobada.',
       type: 'warning',
       timestamp: new Date()
     });
@@ -1349,7 +1495,7 @@ io.on('connection', (socket) => {
 });
 
 // ============================================
-// RUTAS HTML - ✅ MOVIDAS ANTES DEL 404
+// RUTAS HTML
 // ============================================
 
 app.get('/', (req, res) => {
@@ -1393,7 +1539,7 @@ app.get('/health', (req, res) => {
 });
 
 // ============================================
-// 404 HANDLER - ✅ DEBE SER EL ÚLTIMO
+// 404 HANDLER
 // ============================================
 
 app.use((req, res) => {
@@ -1421,19 +1567,6 @@ server.listen(PORT, () => {
   console.log(`   5. PICKED_UP  → Conductor recoge`);
   console.log(`   6. ON_WAY     → En camino al cliente`);
   console.log(`   7. DELIVERED  → ✅ Entregado`);
-  console.log(`\n🌐 RUTAS DISPONIBLES:`);
-  console.log(`   GET  /                    → Login`);
-  console.log(`   GET  /register            → Registro`);
-  console.log(`   GET  /cliente             → Panel Cliente`);
-  console.log(`   GET  /conductor           → Panel Conductor`);
-  console.log(`   GET  /tienda              → Panel Tienda`);
-  console.log(`   GET  /admin               → Panel Admin`);
-  console.log(`   GET  /health              → Estado del servidor`);
-  console.log(`   POST /api/auth/register   → Registro de usuarios`);
-  console.log(`   POST /api/auth/login      → Inicio de sesión`);
-  console.log(`   GET  /api/stores          → Listar tiendas`);
-  console.log(`   GET  /api/orders          → Listar pedidos`);
-  console.log(`   POST /api/orders          → Crear pedido`);
   console.log(`\n👥 USUARIOS DE PRUEBA:`);
   console.log(`   Cliente:    cliente@delivery.com / cliente123`);
   console.log(`   Conductor:  conductor@delivery.com / conductor123`);
@@ -1442,264 +1575,4 @@ server.listen(PORT, () => {
   console.log(`${'='.repeat(60)}\n`);
 });
 
-module.exports = { app, server, io };stores.find(s => s.id === parseInt(storeId));
-
-    if (!store) {
-      return res.status(404).json({ error: 'Tienda no encontrada' });
-    }
-
-    // ✅ CORREGIDO: Incluir productos en la respuesta
-    const products = database.products.filter(p => p.storeId === store.id);
-
-    res.json({ store, products });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al obtener tienda', details: error.message });
-  }
-});
-
-app.post('/api/stores', authenticateToken, upload.single('image'), (req, res) => {
-  try {
-    if (req.user.role !== 'store_owner' && req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'No autorizado' });
-    }
-
-    const { name, description, category, deliveryTime, deliveryFee, minOrder, address, lat, lng } = req.body;
-
-    const newStore = {
-      id: database.stores.length + 1,
-      name,
-      description,
-      category,
-      image: req.file ? `/uploads/stores/${req.file.filename}` : null,
-      rating: 5.0,
-      deliveryTime,
-      deliveryFee: parseFloat(deliveryFee),
-      minOrder: parseFloat(minOrder),
-      isOpen: true,
-      ownerId: req.user.id,
-      location: { lat: parseFloat(lat), lng: parseFloat(lng), address },
-      createdAt: new Date()
-    };
-
-    database.stores.push(newStore);
-    saveDatabase();
-
-    notifyRole('client', {
-      title: '¡Nueva tienda disponible!',
-      message: `${name} ahora está en la plataforma`,
-      type: 'success',
-      timestamp: new Date()
-    });
-
-    res.status(201).json({ 
-      message: 'Tienda creada exitosamente',
-      store: newStore 
-    });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al crear tienda', details: error.message });
-  }
-});
-
-app.put('/api/stores/:storeId', authenticateToken, upload.single('image'), (req, res) => {
-  try {
-    const { storeId } = req.params;
-    const store = database.stores.find(s => s.id === parseInt(storeId));
-
-    if (!store) {
-      return res.status(404).json({ error: 'Tienda no encontrada' });
-    }
-
-    if (store.ownerId !== req.user.id && req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'No autorizado' });
-    }
-
-    const { name, description, category, deliveryTime, deliveryFee, minOrder, isOpen, address, lat, lng } = req.body;
-
-    if (name) store.name = name;
-    if (description) store.description = description;
-    if (category) store.category = category;
-    if (deliveryTime) store.deliveryTime = deliveryTime;
-    if (deliveryFee) store.deliveryFee = parseFloat(deliveryFee);
-    if (minOrder) store.minOrder = parseFloat(minOrder);
-    if (typeof isOpen !== 'undefined') store.isOpen = isOpen === 'true' || isOpen === true;
-    if (req.file) store.image = `/uploads/stores/${req.file.filename}`;
-    if (address || lat || lng) {
-      store.location = {
-        lat: lat ? parseFloat(lat) : store.location.lat,
-        lng: lng ? parseFloat(lng) : store.location.lng,
-        address: address || store.location.address
-      };
-    }
-
-    saveDatabase();
-    res.json({ 
-      message: 'Tienda actualizada exitosamente',
-      store 
-    });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al actualizar tienda', details: error.message });
-  }
-});
-
-app.delete('/api/stores/:storeId', authenticateToken, (req, res) => {
-  try {
-    const { storeId } = req.params;
-    const storeIndex = database.stores.findIndex(s => s.id === parseInt(storeId));
-
-    if (storeIndex === -1) {
-      return res.status(404).json({ error: 'Tienda no encontrada' });
-    }
-
-    const store = database.stores[storeIndex];
-
-    if (store.ownerId !== req.user.id && req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'No autorizado' });
-    }
-
-    database.stores.splice(storeIndex, 1);
-    database.products = database.products.filter(p => p.storeId !== parseInt(storeId));
-    saveDatabase();
-
-    res.json({ message: 'Tienda eliminada exitosamente' });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al eliminar tienda', details: error.message });
-  }
-});
-
-// ============================================
-// PRODUCTOS
-// ============================================
-
-app.get('/api/stores/:storeId/products', (req, res) => {
-  try {
-    const { storeId } = req.params;
-    const { category } = req.query;
-    
-    let products = database.products.filter(p => p.storeId === parseInt(storeId));
-
-    if (category) {
-      products = products.filter(p => p.category === category);
-    }
-
-    res.json({ products });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al obtener productos', details: error.message });
-  }
-});
-
-app.post('/api/products', authenticateToken, upload.single('image'), (req, res) => {
-  try {
-    if (req.user.role !== 'store_owner' && req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'No autorizado' });
-    }
-
-    const { storeId, name, description, price, category, preparationTime } = req.body;
-    
-    const store = database.stores.find(s => s.id === parseInt(storeId));
-    if (!store) {
-      return res.status(404).json({ error: 'Tienda no encontrada' });
-    }
-
-    if (store.ownerId !== req.user.id && req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'No autorizado para esta tienda' });
-    }
-
-    const newProduct = {
-      id: database.products.length + 1,
-      storeId: parseInt(storeId),
-      name,
-      description,
-      price: parseFloat(price),
-      image: req.file ? `/uploads/products/${req.file.filename}` : null,
-      category,
-      available: true,
-      preparationTime: parseInt(preparationTime) || 15
-    };
-
-    database.products.push(newProduct);
-    saveDatabase();
-
-    res.status(201).json({ 
-      message: 'Producto creado exitosamente',
-      product: newProduct 
-    });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al crear producto', details: error.message });
-  }
-});
-
-app.put('/api/products/:productId', authenticateToken, upload.single('image'), (req, res) => {
-  try {
-    const { productId } = req.params;
-    const product = database.products.find(p => p.id === parseInt(productId));
-
-    if (!product) {
-      return res.status(404).json({ error: 'Producto no encontrado' });
-    }
-
-    const store = database.stores.find(s => s.id === product.storeId);
-    if (store.ownerId !== req.user.id && req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'No autorizado' });
-    }
-
-    const { name, description, price, category, available, preparationTime } = req.body;
-
-    if (name) product.name = name;
-    if (description) product.description = description;
-    if (price) product.price = parseFloat(price);
-    if (category) product.category = category;
-    if (typeof available !== 'undefined') product.available = available === 'true' || available === true;
-    if (preparationTime) product.preparationTime = parseInt(preparationTime);
-    if (req.file) product.image = `/uploads/products/${req.file.filename}`;
-
-    saveDatabase();
-    res.json({ 
-      message: 'Producto actualizado exitosamente',
-      product 
-    });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al actualizar producto', details: error.message });
-  }
-});
-
-app.delete('/api/products/:productId', authenticateToken, (req, res) => {
-  try {
-    const { productId } = req.params;
-    const productIndex = database.products.findIndex(p => p.id === parseInt(productId));
-
-    if (productIndex === -1) {
-      return res.status(404).json({ error: 'Producto no encontrado' });
-    }
-
-    const product = database.products[productIndex];
-    const store = database.stores.find(s => s.id === product.storeId);
-
-    if (store.ownerId !== req.user.id && req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'No autorizado' });
-    }
-
-    database.products.splice(productIndex, 1);
-    saveDatabase();
-    res.json({ message: 'Producto eliminado exitosamente' });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al eliminar producto', details: error.message });
-  }
-});
-
-// ============================================
-// PEDIDOS
-// ============================================
-
-app.post('/api/orders', authenticateToken, (req, res) => {
-  try {
-    if (req.user.role !== 'client') {
-      return res.status(403).json({ error: 'Solo clientes pueden crear pedidos' });
-    }
-
-    const { storeId, items, deliveryAddress, paymentMethod, notes } = req.body;
-
-    if (!items || items.length === 0) {
-      return res.status(400).json({ error: 'El pedido debe tener al menos un producto' });
-    }
-
-    const store = database.
+module.exports = { app, server, io };
