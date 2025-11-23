@@ -7,9 +7,13 @@ const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const fs = require('fs');
-const bcrypt = require('bcryptjs'); // ✅ NUEVO
-const helmet = require('helmet'); // ✅ NUEVO
-const rateLimit = require('express-rate-limit'); // ✅ NUEVO
+const bcrypt = require('bcryptjs');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+
+// ✅ Importar modelos de PostgreSQL
+const { User, Store, Product, Order, sequelize } = require('./models');
+const { testConnection } = require('./config/database');
 
 const app = express();
 const server = http.createServer(app);
@@ -21,31 +25,25 @@ const io = new Server(server, {
 });
 
 // ============================================
-// ✅ SEGURIDAD: Helmet
+// SEGURIDAD
 // ============================================
 app.use(helmet({
-  contentSecurityPolicy: false, // Desactivar para permitir CDN de Tailwind
+  contentSecurityPolicy: false,
   crossOriginEmbedderPolicy: false
 }));
 
-// ============================================
-// ✅ SEGURIDAD: Rate Limiting
-// ============================================
 const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 5, // 5 intentos
-  message: { error: 'Demasiados intentos de login. Intenta en 15 minutos.' },
-  standardHeaders: true,
-  legacyHeaders: false,
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: { error: 'Demasiados intentos de login. Intenta en 15 minutos.' }
 });
 
 const generalLimiter = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1 minuto
-  max: 100, // 100 requests por minuto
+  windowMs: 1 * 60 * 1000,
+  max: 100,
   message: { error: 'Demasiadas solicitudes. Intenta más tarde.' }
 });
 
-// Aplicar rate limit general a todas las rutas API
 app.use('/api/', generalLimiter);
 
 // Mapa de usuarios conectados
@@ -62,40 +60,17 @@ function notifyUser(userId, notification) {
     console.log(`📬 Notificación enviada a usuario ${userId}:`, notification.title);
     return true;
   }
-  console.log(`⚠️ Usuario ${userId} no está conectado`);
   return false;
 }
 
-function notifyAll(notification) {
-  io.emit('notification', notification);
-  console.log(`📢 Notificación enviada a TODOS:`, notification.title);
-}
-
 function notifyRole(role, notification) {
-  const usersOfRole = database.users
-    .filter(u => u.role === role)
-    .map(u => u.id);
-  
-  let sentCount = 0;
-  usersOfRole.forEach(userId => {
-    if (notifyUser(userId, notification)) {
-      sentCount++;
-    }
+  User.findAll({ where: { role } }).then(users => {
+    users.forEach(user => notifyUser(user.id, notification));
   });
-  
-  console.log(`📢 Notificación enviada a rol ${role}: ${sentCount}/${usersOfRole.length} usuarios`);
-  return sentCount;
 }
 
 function notifyMultiple(userIds, notification) {
-  let sentCount = 0;
-  userIds.forEach(userId => {
-    if (notifyUser(userId, notification)) {
-      sentCount++;
-    }
-  });
-  console.log(`📬 Notificación enviada a ${sentCount}/${userIds.length} usuarios`);
-  return sentCount;
+  userIds.forEach(userId => notifyUser(userId, notification));
 }
 
 // Crear carpetas necesarias
@@ -144,26 +119,18 @@ app.use(express.json());
 app.use(express.static('public'));
 app.use('/uploads', express.static('uploads'));
 
-// ============================================
-// ✅ CONSTANTES CON VARIABLES DE ENTORNO
-// ============================================
+// Constantes
 const JWT_SECRET = process.env.JWT_SECRET;
 const PORT = process.env.PORT || 3000;
 const COMMISSION_RATE = parseFloat(process.env.COMMISSION_RATE) || 0.20;
 const SERVICE_FEE = parseFloat(process.env.SERVICE_FEE) || 10;
-const DB_FILE = process.env.DB_FILE || 'database.json';
 
-// ✅ VALIDAR JWT_SECRET
 if (!JWT_SECRET || JWT_SECRET === 'tu-secreto-super-seguro-CAMBIAR-EN-PRODUCCION') {
   console.error('❌ ERROR: JWT_SECRET no configurado correctamente en .env');
-  console.error('🔧 Genera uno aquí: https://randomkeygen.com/');
   process.exit(1);
 }
 
-// ============================================
-// ESTADOS DE PEDIDOS Y PERMISOS
-// ============================================
-
+// Estados de pedidos
 const ORDER_STATES = {
   PENDING: 'pending',
   ACCEPTED: 'accepted',
@@ -211,234 +178,6 @@ const STATE_PERMISSIONS = {
 };
 
 // ============================================
-// ✅ BASE DE DATOS CON CONTRASEÑAS HASHEADAS
-// ============================================
-let database = {
-  users: [
-    {
-      id: 1,
-      email: 'cliente@delivery.com',
-      password: '$2a$10$X8qY9Z5Y5Y5Y5Y5Y5Y5Y5uqKqKqKqKqKqKqKqKqKqKqKqKqKqKq', // cliente123
-      name: 'Juan Cliente',
-      phone: '5512345678',
-      role: 'client',
-      address: 'Av. Insurgentes Sur 1234, CDMX',
-      createdAt: new Date()
-    },
-    {
-      id: 2,
-      email: 'conductor@delivery.com',
-      password: '$2a$10$X8qY9Z5Y5Y5Y5Y5Y5Y5Y5uqKqKqKqKqKqKqKqKqKqKqKqKqKqKq', // conductor123
-      name: 'Pedro Conductor',
-      phone: '5587654321',
-      role: 'driver',
-      vehicle: 'Moto Honda 2020',
-      license: 'ABC123456',
-      available: true,
-      approved: true,
-      currentLocation: { lat: 19.4326, lng: -99.1332 },
-      rating: 4.8,
-      totalDeliveries: 150,
-      totalEarnings: 0,
-      createdAt: new Date()
-    },
-    {
-      id: 3,
-      email: 'admin@delivery.com',
-      password: '$2a$10$X8qY9Z5Y5Y5Y5Y5Y5Y5Y5uqKqKqKqKqKqKqKqKqKqKqKqKqKqKq', // admin123
-      name: 'Administrador',
-      phone: '5500000000',
-      role: 'admin',
-      createdAt: new Date()
-    },
-    {
-      id: 4,
-      email: 'tienda@delivery.com',
-      password: '$2a$10$X8qY9Z5Y5Y5Y5Y5Y5Y5Y5uqKqKqKqKqKqKqKqKqKqKqKqKqKqKq', // tienda123
-      name: 'María Comerciante',
-      phone: '5599887766',
-      role: 'store_owner',
-      createdAt: new Date()
-    }
-  ],
-  
-  stores: [
-    {
-      id: 1,
-      name: 'Tacos El Güero',
-      description: 'Los mejores tacos de la ciudad',
-      category: 'Mexicana',
-      image: '/uploads/stores/tacos.jpg',
-      rating: 4.5,
-      deliveryTime: '20-30 min',
-      deliveryFee: 35,
-      minOrder: 50,
-      isOpen: true,
-      ownerId: 4,
-      location: { lat: 19.4326, lng: -99.1332, address: 'Av. Reforma 123' },
-      createdAt: new Date()
-    },
-    {
-      id: 2,
-      name: 'Pizzería Napolitana',
-      description: 'Auténtica pizza italiana',
-      category: 'Italiana',
-      image: '/uploads/stores/pizza.jpg',
-      rating: 4.7,
-      deliveryTime: '30-40 min',
-      deliveryFee: 40,
-      minOrder: 80,
-      isOpen: true,
-      ownerId: 4,
-      location: { lat: 19.4330, lng: -99.1340, address: 'Calle Roma 456' },
-      createdAt: new Date()
-    },
-    {
-      id: 3,
-      name: 'Sushi Tokyo',
-      description: 'Sushi fresco y rolls especiales',
-      category: 'Japonesa',
-      image: '/uploads/stores/sushi.jpg',
-      rating: 4.8,
-      deliveryTime: '25-35 min',
-      deliveryFee: 45,
-      minOrder: 100,
-      isOpen: true,
-      ownerId: 4,
-      location: { lat: 19.4335, lng: -99.1335, address: 'Av. Chapultepec 789' },
-      createdAt: new Date()
-    }
-  ],
-
-  products: [
-    {
-      id: 1,
-      storeId: 1,
-      name: 'Tacos de Pastor',
-      description: 'Tradicionales tacos al pastor con piña',
-      price: 45,
-      image: '/uploads/products/tacos-pastor.jpg',
-      category: 'Tacos',
-      available: true,
-      preparationTime: 10
-    },
-    {
-      id: 2,
-      storeId: 1,
-      name: 'Tacos de Bistec',
-      description: 'Tacos de bistec con cebolla y cilantro',
-      price: 50,
-      image: '/uploads/products/tacos-bistec.jpg',
-      category: 'Tacos',
-      available: true,
-      preparationTime: 12
-    },
-    {
-      id: 3,
-      storeId: 2,
-      name: 'Pizza Margarita',
-      description: 'Tomate, mozzarella y albahaca',
-      price: 180,
-      image: '/uploads/products/pizza-margarita.jpg',
-      category: 'Pizzas',
-      available: true,
-      preparationTime: 25
-    },
-    {
-      id: 4,
-      storeId: 2,
-      name: 'Pizza Pepperoni',
-      description: 'Pepperoni italiano y queso mozzarella',
-      price: 200,
-      image: '/uploads/products/pizza-pepperoni.jpg',
-      category: 'Pizzas',
-      available: true,
-      preparationTime: 25
-    },
-    {
-      id: 5,
-      storeId: 3,
-      name: 'California Roll',
-      description: 'Cangrejo, aguacate y pepino',
-      price: 120,
-      image: '/uploads/products/california-roll.jpg',
-      category: 'Rolls',
-      available: true,
-      preparationTime: 15
-    },
-    {
-      id: 6,
-      storeId: 3,
-      name: 'Sashimi Mixto',
-      description: 'Selección de pescados frescos',
-      price: 250,
-      image: '/uploads/products/sashimi.jpg',
-      category: 'Sashimi',
-      available: true,
-      preparationTime: 10
-    }
-  ],
-
-  orders: []
-};
-
-// ============================================
-// FUNCIONES DE PERSISTENCIA
-// ============================================
-
-function saveDatabase() {
-  try {
-    fs.writeFileSync(DB_FILE, JSON.stringify(database, null, 2));
-    console.log('💾 Base de datos guardada');
-  } catch (error) {
-    console.error('❌ Error guardando base de datos:', error);
-  }
-}
-
-function loadDatabase() {
-  try {
-    if (fs.existsSync(DB_FILE)) {
-      const data = fs.readFileSync(DB_FILE, 'utf8');
-      database = JSON.parse(data);
-      console.log('📂 Base de datos cargada desde archivo');
-    } else {
-      console.log('📝 Usando base de datos inicial');
-      // ✅ Hashear contraseñas iniciales
-      initializePasswords();
-      saveDatabase();
-    }
-  } catch (error) {
-    console.error('❌ Error cargando base de datos:', error);
-    console.log('📝 Usando base de datos inicial');
-    initializePasswords();
-  }
-}
-
-// ✅ NUEVA FUNCIÓN: Hashear contraseñas iniciales
-async function initializePasswords() {
-  console.log('🔐 Hasheando contraseñas iniciales...');
-  const passwords = {
-    'cliente@delivery.com': 'cliente123',
-    'conductor@delivery.com': 'conductor123',
-    'admin@delivery.com': 'admin123',
-    'tienda@delivery.com': 'tienda123'
-  };
-
-  for (let user of database.users) {
-    if (passwords[user.email]) {
-      user.password = await bcrypt.hash(passwords[user.email], 10);
-    }
-  }
-  console.log('✅ Contraseñas hasheadas');
-}
-
-loadDatabase();
-
-setInterval(() => {
-  saveDatabase();
-}, 5 * 60 * 1000);
-
-// ============================================
 // MIDDLEWARE DE AUTENTICACIÓN
 // ============================================
 
@@ -460,7 +199,7 @@ function authenticateToken(req, res, next) {
 }
 
 // ============================================
-// ✅ AUTENTICACIÓN CON BCRYPT
+// AUTENTICACIÓN
 // ============================================
 
 app.post('/api/auth/register', async (req, res) => {
@@ -471,52 +210,42 @@ app.post('/api/auth/register', async (req, res) => {
       return res.status(400).json({ error: 'Faltan campos requeridos' });
     }
 
-    // ✅ Validar email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       return res.status(400).json({ error: 'Email inválido' });
     }
 
-    // ✅ Validar contraseña
     if (password.length < 6) {
       return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
     }
 
-    const existingUser = database.users.find(u => u.email === email);
+    const existingUser = await User.findOne({ where: { email } });
     if (existingUser) {
       return res.status(400).json({ error: 'El email ya está registrado' });
     }
 
-    // ✅ HASHEAR CONTRASEÑA
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const newUser = {
-      id: database.users.length + 1,
+    const userData = {
       email,
-      password: hashedPassword, // ✅ Guardar hasheada
+      password: hashedPassword,
       name,
       phone,
-      role,
-      createdAt: new Date()
+      role
     };
 
     if (role === 'driver') {
-      newUser.vehicle = vehicle;
-      newUser.license = license;
-      newUser.inePhoto = inePhoto;
-      newUser.vehiclePhoto = vehiclePhoto;
-      newUser.available = false;
-      newUser.approved = false;
-      newUser.currentLocation = { lat: 19.4326, lng: -99.1332 };
-      newUser.rating = 5.0;
-      newUser.totalDeliveries = 0;
-      newUser.totalEarnings = 0;
+      userData.vehicle = vehicle;
+      userData.license = license;
+      userData.inePhoto = inePhoto;
+      userData.vehiclePhoto = vehiclePhoto;
+      userData.available = false;
+      userData.approved = false;
     } else if (role === 'client') {
-      newUser.address = address;
+      userData.address = address;
     }
 
-    database.users.push(newUser);
-    saveDatabase();
+    const newUser = await User.create(userData);
 
     const token = jwt.sign(
       { id: newUser.id, email: newUser.email, role: newUser.role },
@@ -533,11 +262,13 @@ app.post('/api/auth/register', async (req, res) => {
       });
     }
 
-    const { password: _, ...userWithoutPassword } = newUser;
+    const userResponse = newUser.toJSON();
+    delete userResponse.password;
+
     res.status(201).json({ 
       message: 'Usuario registrado exitosamente',
       token,
-      user: userWithoutPassword
+      user: userResponse
     });
   } catch (error) {
     console.error('Error en registro:', error);
@@ -545,7 +276,6 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
-// ✅ LOGIN CON BCRYPT Y RATE LIMITING
 app.post('/api/auth/login', loginLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -554,13 +284,12 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Email y contraseña son requeridos' });
     }
 
-    const user = database.users.find(u => u.email === email);
+    const user = await User.findOne({ where: { email } });
 
     if (!user) {
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
 
-    // ✅ COMPARAR CONTRASEÑA HASHEADA
     const isValidPassword = await bcrypt.compare(password, user.password);
 
     if (!isValidPassword) {
@@ -579,11 +308,13 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
       { expiresIn: '24h' }
     );
 
-    const { password: _, ...userWithoutPassword } = user;
+    const userResponse = user.toJSON();
+    delete userResponse.password;
+
     res.json({ 
       message: 'Login exitoso',
       token,
-      user: userWithoutPassword
+      user: userResponse
     });
   } catch (error) {
     console.error('Error en login:', error);
@@ -591,29 +322,33 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
   }
 });
 
-app.get('/api/auth/me', authenticateToken, (req, res) => {
+app.get('/api/auth/me', authenticateToken, async (req, res) => {
   try {
-    const user = database.users.find(u => u.id === req.user.id);
+    const user = await User.findByPk(req.user.id);
     if (!user) {
       return res.status(404).json({ error: 'Usuario no encontrado' });
     }
 
-    const { password, ...userWithoutPassword } = user;
-    res.json({ user: userWithoutPassword });
+    const userResponse = user.toJSON();
+    delete userResponse.password;
+
+    res.json({ user: userResponse });
   } catch (error) {
     res.status(500).json({ error: 'Error al obtener usuario', details: error.message });
   }
 });
 
-app.get('/api/users/profile', authenticateToken, (req, res) => {
+app.get('/api/users/profile', authenticateToken, async (req, res) => {
   try {
-    const user = database.users.find(u => u.id === req.user.id);
+    const user = await User.findByPk(req.user.id);
     if (!user) {
       return res.status(404).json({ error: 'Usuario no encontrado' });
     }
 
-    const { password, ...userWithoutPassword } = user;
-    res.json({ user: userWithoutPassword });
+    const userResponse = user.toJSON();
+    delete userResponse.password;
+
+    res.json({ user: userResponse });
   } catch (error) {
     res.status(500).json({ error: 'Error al obtener usuario', details: error.message });
   }
@@ -623,14 +358,12 @@ app.get('/api/users/profile', authenticateToken, (req, res) => {
 // TIENDAS
 // ============================================
 
-app.get('/api/stores', (req, res) => {
+app.get('/api/stores', async (req, res) => {
   try {
     const { category } = req.query;
-    let stores = database.stores;
+    const where = category ? { category } : {};
 
-    if (category) {
-      stores = stores.filter(s => s.category === category);
-    }
+    const stores = await Store.findAll({ where });
 
     res.json({ stores });
   } catch (error) {
@@ -638,16 +371,16 @@ app.get('/api/stores', (req, res) => {
   }
 });
 
-app.get('/api/stores/:storeId', (req, res) => {
+app.get('/api/stores/:storeId', async (req, res) => {
   try {
     const { storeId } = req.params;
-    const store = database.stores.find(s => s.id === parseInt(storeId));
+    const store = await Store.findByPk(storeId);
 
     if (!store) {
       return res.status(404).json({ error: 'Tienda no encontrada' });
     }
 
-    const products = database.products.filter(p => p.storeId === store.id);
+    const products = await Product.findAll({ where: { storeId } });
 
     res.json({ store, products });
   } catch (error) {
@@ -655,7 +388,7 @@ app.get('/api/stores/:storeId', (req, res) => {
   }
 });
 
-app.post('/api/stores', authenticateToken, upload.single('image'), (req, res) => {
+app.post('/api/stores', authenticateToken, upload.single('image'), async (req, res) => {
   try {
     if (req.user.role !== 'store_owner' && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'No autorizado' });
@@ -663,24 +396,17 @@ app.post('/api/stores', authenticateToken, upload.single('image'), (req, res) =>
 
     const { name, description, category, deliveryTime, deliveryFee, minOrder, address, lat, lng } = req.body;
 
-    const newStore = {
-      id: database.stores.length + 1,
+    const newStore = await Store.create({
       name,
       description,
       category,
       image: req.file ? `/uploads/stores/${req.file.filename}` : null,
-      rating: 5.0,
       deliveryTime,
       deliveryFee: parseFloat(deliveryFee),
       minOrder: parseFloat(minOrder),
-      isOpen: true,
       ownerId: req.user.id,
-      location: { lat: parseFloat(lat), lng: parseFloat(lng), address },
-      createdAt: new Date()
-    };
-
-    database.stores.push(newStore);
-    saveDatabase();
+      location: { lat: parseFloat(lat), lng: parseFloat(lng), address }
+    });
 
     res.status(201).json({ 
       message: 'Tienda creada exitosamente',
@@ -691,10 +417,10 @@ app.post('/api/stores', authenticateToken, upload.single('image'), (req, res) =>
   }
 });
 
-app.put('/api/stores/:storeId', authenticateToken, upload.single('image'), (req, res) => {
+app.put('/api/stores/:storeId', authenticateToken, upload.single('image'), async (req, res) => {
   try {
     const { storeId } = req.params;
-    const store = database.stores.find(s => s.id === parseInt(storeId));
+    const store = await Store.findByPk(storeId);
 
     if (!store) {
       return res.status(404).json({ error: 'Tienda no encontrada' });
@@ -706,23 +432,25 @@ app.put('/api/stores/:storeId', authenticateToken, upload.single('image'), (req,
 
     const { name, description, category, deliveryTime, deliveryFee, minOrder, isOpen, address, lat, lng } = req.body;
 
-    if (name) store.name = name;
-    if (description) store.description = description;
-    if (category) store.category = category;
-    if (deliveryTime) store.deliveryTime = deliveryTime;
-    if (deliveryFee) store.deliveryFee = parseFloat(deliveryFee);
-    if (minOrder) store.minOrder = parseFloat(minOrder);
-    if (typeof isOpen !== 'undefined') store.isOpen = isOpen === 'true' || isOpen === true;
-    if (req.file) store.image = `/uploads/stores/${req.file.filename}`;
+    const updates = {};
+    if (name) updates.name = name;
+    if (description) updates.description = description;
+    if (category) updates.category = category;
+    if (deliveryTime) updates.deliveryTime = deliveryTime;
+    if (deliveryFee) updates.deliveryFee = parseFloat(deliveryFee);
+    if (minOrder) updates.minOrder = parseFloat(minOrder);
+    if (typeof isOpen !== 'undefined') updates.isOpen = isOpen === 'true' || isOpen === true;
+    if (req.file) updates.image = `/uploads/stores/${req.file.filename}`;
     if (address || lat || lng) {
-      store.location = {
+      updates.location = {
         lat: lat ? parseFloat(lat) : store.location.lat,
         lng: lng ? parseFloat(lng) : store.location.lng,
         address: address || store.location.address
       };
     }
 
-    saveDatabase();
+    await store.update(updates);
+
     res.json({ 
       message: 'Tienda actualizada exitosamente',
       store 
@@ -732,24 +460,21 @@ app.put('/api/stores/:storeId', authenticateToken, upload.single('image'), (req,
   }
 });
 
-app.delete('/api/stores/:storeId', authenticateToken, (req, res) => {
+app.delete('/api/stores/:storeId', authenticateToken, async (req, res) => {
   try {
     const { storeId } = req.params;
-    const storeIndex = database.stores.findIndex(s => s.id === parseInt(storeId));
+    const store = await Store.findByPk(storeId);
 
-    if (storeIndex === -1) {
+    if (!store) {
       return res.status(404).json({ error: 'Tienda no encontrada' });
     }
-
-    const store = database.stores[storeIndex];
 
     if (store.ownerId !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'No autorizado' });
     }
 
-    database.stores.splice(storeIndex, 1);
-    database.products = database.products.filter(p => p.storeId !== parseInt(storeId));
-    saveDatabase();
+    await Product.destroy({ where: { storeId } });
+    await store.destroy();
 
     res.json({ message: 'Tienda eliminada exitosamente' });
   } catch (error) {
@@ -761,16 +486,15 @@ app.delete('/api/stores/:storeId', authenticateToken, (req, res) => {
 // PRODUCTOS
 // ============================================
 
-app.get('/api/stores/:storeId/products', (req, res) => {
+app.get('/api/stores/:storeId/products', async (req, res) => {
   try {
     const { storeId } = req.params;
     const { category } = req.query;
     
-    let products = database.products.filter(p => p.storeId === parseInt(storeId));
+    const where = { storeId: parseInt(storeId) };
+    if (category) where.category = category;
 
-    if (category) {
-      products = products.filter(p => p.category === category);
-    }
+    const products = await Product.findAll({ where });
 
     res.json({ products });
   } catch (error) {
@@ -778,7 +502,7 @@ app.get('/api/stores/:storeId/products', (req, res) => {
   }
 });
 
-app.post('/api/products', authenticateToken, upload.single('image'), (req, res) => {
+app.post('/api/products', authenticateToken, upload.single('image'), async (req, res) => {
   try {
     if (req.user.role !== 'store_owner' && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'No autorizado' });
@@ -786,7 +510,7 @@ app.post('/api/products', authenticateToken, upload.single('image'), (req, res) 
 
     const { storeId, name, description, price, category, preparationTime } = req.body;
     
-    const store = database.stores.find(s => s.id === parseInt(storeId));
+    const store = await Store.findByPk(storeId);
     if (!store) {
       return res.status(404).json({ error: 'Tienda no encontrada' });
     }
@@ -795,20 +519,15 @@ app.post('/api/products', authenticateToken, upload.single('image'), (req, res) 
       return res.status(403).json({ error: 'No autorizado para esta tienda' });
     }
 
-    const newProduct = {
-      id: database.products.length + 1,
+    const newProduct = await Product.create({
       storeId: parseInt(storeId),
       name,
       description,
       price: parseFloat(price),
       image: req.file ? `/uploads/products/${req.file.filename}` : null,
       category,
-      available: true,
       preparationTime: parseInt(preparationTime) || 15
-    };
-
-    database.products.push(newProduct);
-    saveDatabase();
+    });
 
     res.status(201).json({ 
       message: 'Producto creado exitosamente',
@@ -819,31 +538,33 @@ app.post('/api/products', authenticateToken, upload.single('image'), (req, res) 
   }
 });
 
-app.put('/api/products/:productId', authenticateToken, upload.single('image'), (req, res) => {
+app.put('/api/products/:productId', authenticateToken, upload.single('image'), async (req, res) => {
   try {
     const { productId } = req.params;
-    const product = database.products.find(p => p.id === parseInt(productId));
+    const product = await Product.findByPk(productId);
 
     if (!product) {
       return res.status(404).json({ error: 'Producto no encontrado' });
     }
 
-    const store = database.stores.find(s => s.id === product.storeId);
+    const store = await Store.findByPk(product.storeId);
     if (store.ownerId !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'No autorizado' });
     }
 
     const { name, description, price, category, available, preparationTime } = req.body;
 
-    if (name) product.name = name;
-    if (description) product.description = description;
-    if (price) product.price = parseFloat(price);
-    if (category) product.category = category;
-    if (typeof available !== 'undefined') product.available = available === 'true' || available === true;
-    if (preparationTime) product.preparationTime = parseInt(preparationTime);
-    if (req.file) product.image = `/uploads/products/${req.file.filename}`;
+    const updates = {};
+    if (name) updates.name = name;
+    if (description) updates.description = description;
+    if (price) updates.price = parseFloat(price);
+    if (category) updates.category = category;
+    if (typeof available !== 'undefined') updates.available = available === 'true' || available === true;
+    if (preparationTime) updates.preparationTime = parseInt(preparationTime);
+    if (req.file) updates.image = `/uploads/products/${req.file.filename}`;
 
-    saveDatabase();
+    await product.update(updates);
+
     res.json({ 
       message: 'Producto actualizado exitosamente',
       product 
@@ -853,24 +574,21 @@ app.put('/api/products/:productId', authenticateToken, upload.single('image'), (
   }
 });
 
-app.delete('/api/products/:productId', authenticateToken, (req, res) => {
+app.delete('/api/products/:productId', authenticateToken, async (req, res) => {
   try {
     const { productId } = req.params;
-    const productIndex = database.products.findIndex(p => p.id === parseInt(productId));
+    const product = await Product.findByPk(productId);
 
-    if (productIndex === -1) {
+    if (!product) {
       return res.status(404).json({ error: 'Producto no encontrado' });
     }
 
-    const product = database.products[productIndex];
-    const store = database.stores.find(s => s.id === product.storeId);
-
+    const store = await Store.findByPk(product.storeId);
     if (store.ownerId !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'No autorizado' });
     }
 
-    database.products.splice(productIndex, 1);
-    saveDatabase();
+    await product.destroy();
     res.json({ message: 'Producto eliminado exitosamente' });
   } catch (error) {
     res.status(500).json({ error: 'Error al eliminar producto', details: error.message });
@@ -893,7 +611,7 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'El pedido debe tener al menos un producto' });
     }
 
-    const store = database.stores.find(s => s.id === storeId);
+    const store = await Store.findByPk(storeId);
     if (!store) {
       return res.status(404).json({ error: 'Tienda no encontrada' });
     }
@@ -903,8 +621,10 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
     }
 
     let subtotal = 0;
-    const orderItems = items.map(item => {
-      const product = database.products.find(p => p.id === item.productId);
+    const orderItems = [];
+
+    for (const item of items) {
+      const product = await Product.findByPk(item.productId);
       if (!product) {
         throw new Error(`Producto ${item.productId} no encontrado`);
       }
@@ -913,18 +633,18 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
       }
       const itemTotal = product.price * item.quantity;
       subtotal += itemTotal;
-      return {
+      orderItems.push({
         productId: product.id,
         name: product.name,
         price: product.price,
         quantity: item.quantity,
         total: itemTotal
-      };
-    });
+      });
+    }
 
     if (subtotal < store.minOrder) {
       return res.status(400).json({ 
-        error: `El pedido mínimo es de ${store.minOrder}`,
+        error: `El pedido mínimo es de $${store.minOrder}`,
         minOrder: store.minOrder,
         currentTotal: subtotal
       });
@@ -933,15 +653,16 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
     const deliveryFee = store.deliveryFee;
     const total = subtotal + deliveryFee + SERVICE_FEE;
     const commission = subtotal * COMMISSION_RATE;
-    const orderNumber = database.orders.length + 1;
-    const customer = database.users.find(u => u.id === req.user.id);
 
-    const newOrder = {
-      id: database.orders.length + 1,
-      orderNumber: orderNumber,
+    const lastOrder = await Order.findOne({ order: [['orderNumber', 'DESC']] });
+    const orderNumber = lastOrder ? lastOrder.orderNumber + 1 : 1;
+
+    const customer = await User.findByPk(req.user.id);
+
+    const newOrder = await Order.create({
+      orderNumber,
       customerId: req.user.id,
       storeId,
-      storeName: store.name,
       items: orderItems,
       subtotal,
       deliveryFee,
@@ -953,18 +674,6 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
       paymentMethod,
       notes: notes || '',
       distance: 5.2,
-      driverEarnings: 0,
-      createdAt: new Date(),
-      customer: {
-        id: customer.id,
-        name: customer.name,
-        phone: customer.phone
-      },
-      store: {
-        id: store.id,
-        name: store.name,
-        location: store.location
-      },
       statusHistory: [
         {
           status: ORDER_STATES.PENDING,
@@ -972,14 +681,11 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
           note: 'Pedido creado'
         }
       ]
-    };
-
-    database.orders.push(newOrder);
-    saveDatabase();
+    });
 
     notifyUser(store.ownerId, {
       title: '¡Nuevo pedido!',
-      message: `Pedido #${newOrder.orderNumber} - ${total.toFixed(2)}`,
+      message: `Pedido #${newOrder.orderNumber} - $${total.toFixed(2)}`,
       type: 'success',
       orderId: newOrder.id,
       timestamp: new Date()
@@ -1002,57 +708,39 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
   }
 });
 
-app.get('/api/orders', authenticateToken, (req, res) => {
+app.get('/api/orders', authenticateToken, async (req, res) => {
   try {
     const { status } = req.query;
-    let orders = [];
+    let where = {};
 
     if (req.user.role === 'client') {
-      orders = database.orders.filter(o => o.customerId === req.user.id);
+      where.customerId = req.user.id;
     } else if (req.user.role === 'driver') {
-      orders = database.orders.filter(o => 
-        o.driverId === req.user.id || 
-        o.status === ORDER_STATES.READY
-      );
+      where = {
+        [sequelize.Sequelize.Op.or]: [
+          { driverId: req.user.id },
+          { status: ORDER_STATES.READY }
+        ]
+      };
     } else if (req.user.role === 'store_owner') {
-      const userStores = database.stores.filter(s => s.ownerId === req.user.id);
+      const userStores = await Store.findAll({ where: { ownerId: req.user.id } });
       const storeIds = userStores.map(s => s.id);
-      orders = database.orders.filter(o => storeIds.includes(o.storeId));
-    } else if (req.user.role === 'admin') {
-      orders = database.orders;
+      where.storeId = { [sequelize.Sequelize.Op.in]: storeIds };
     }
 
     if (status) {
-      orders = orders.filter(o => o.status === status);
+      where.status = status;
     }
 
-    orders = orders.map(order => {
-      const store = database.stores.find(s => s.id === order.storeId);
-      const customer = database.users.find(u => u.id === order.customerId);
-      const driver = order.driverId ? database.users.find(u => u.id === order.driverId) : null;
-
-      return {
-        ...order,
-        store: store ? {
-          id: store.id,
-          name: store.name,
-          location: store.location
-        } : order.store,
-        customer: customer ? {
-          id: customer.id,
-          name: customer.name,
-          phone: customer.phone
-        } : order.customer,
-        driver: driver ? {
-          id: driver.id,
-          name: driver.name,
-          phone: driver.phone,
-          vehicle: driver.vehicle
-        } : order.driver
-      };
+    const orders = await Order.findAll({
+      where,
+      include: [
+        { model: User, as: 'customer', attributes: ['id', 'name', 'phone'] },
+        { model: User, as: 'driver', attributes: ['id', 'name', 'phone', 'vehicle'] },
+        { model: Store, as: 'store', attributes: ['id', 'name', 'location'] }
+      ],
+      order: [['createdAt', 'DESC']]
     });
-
-    orders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
     res.json({ orders });
   } catch (error) {
@@ -1060,10 +748,16 @@ app.get('/api/orders', authenticateToken, (req, res) => {
   }
 });
 
-app.get('/api/orders/:orderId', authenticateToken, (req, res) => {
+app.get('/api/orders/:orderId', authenticateToken, async (req, res) => {
   try {
     const { orderId } = req.params;
-    const order = database.orders.find(o => o.id === parseInt(orderId));
+    const order = await Order.findByPk(orderId, {
+      include: [
+        { model: User, as: 'customer' },
+        { model: User, as: 'driver' },
+        { model: Store, as: 'store' }
+      ]
+    });
 
     if (!order) {
       return res.status(404).json({ error: 'Pedido no encontrado' });
@@ -1073,8 +767,7 @@ app.get('/api/orders/:orderId', authenticateToken, (req, res) => {
       req.user.role === 'admin' ||
       order.customerId === req.user.id ||
       order.driverId === req.user.id ||
-      (req.user.role === 'store_owner' && 
-       database.stores.find(s => s.id === order.storeId)?.ownerId === req.user.id);
+      (req.user.role === 'store_owner' && order.store.ownerId === req.user.id);
 
     if (!hasAccess) {
       return res.status(403).json({ error: 'No tienes acceso a este pedido' });
@@ -1086,12 +779,14 @@ app.get('/api/orders/:orderId', authenticateToken, (req, res) => {
   }
 });
 
-app.put('/api/orders/:orderId/status', authenticateToken, (req, res) => {
+app.put('/api/orders/:orderId/status', authenticateToken, async (req, res) => {
   try {
     const { orderId } = req.params;
     const { status, note } = req.body;
     
-    const order = database.orders.find(o => o.id === parseInt(orderId));
+    const order = await Order.findByPk(orderId, {
+      include: [{ model: Store, as: 'store' }]
+    });
 
     if (!order) {
       return res.status(404).json({ error: 'Pedido no encontrado' });
@@ -1112,73 +807,55 @@ app.put('/api/orders/:orderId/status', authenticateToken, (req, res) => {
       });
     }
 
-    const oldStatus = order.status;
-    order.status = status;
-    order.statusHistory.push({
+    const updates = { status };
+    const statusHistory = [...order.statusHistory, {
       status,
       timestamp: new Date(),
       note: note || '',
       updatedBy: req.user.id
-    });
+    }];
+    updates.statusHistory = statusHistory;
 
     if (status === ORDER_STATES.PICKED_UP) {
-      order.pickedUpAt = new Date();
+      updates.pickedUpAt = new Date();
     } else if (status === ORDER_STATES.DELIVERED) {
-      order.deliveredAt = new Date();
+      updates.deliveredAt = new Date();
+      updates.platformEarnings = order.commission + order.serviceFee;
       
-      const driver = database.users.find(u => u.id === order.driverId);
-      if (driver) {
-        driver.totalDeliveries += 1;
-        driver.totalEarnings += order.driverEarnings;
+      if (order.driverId) {
+        const driver = await User.findByPk(order.driverId);
+        await driver.update({
+          totalDeliveries: driver.totalDeliveries + 1,
+          totalEarnings: driver.totalEarnings + order.driverEarnings
+        });
       }
-
-      order.platformEarnings = order.commission + order.serviceFee;
     } else if (status === ORDER_STATES.ACCEPTED) {
-      order.acceptedAt = new Date();
+      updates.acceptedAt = new Date();
     } else if (status === ORDER_STATES.READY) {
-      order.readyAt = new Date();
+      updates.readyAt = new Date();
     }
 
-    const store = database.stores.find(s => s.id === order.storeId);
-    
+    await order.update(updates);
+
     notifyUser(order.customerId, {
       title: 'Actualización de pedido',
-      message: getStatusMessage(status, order),
+      message: getStatusMessage(status),
       type: 'info',
       orderId: order.id,
       status: status,
       timestamp: new Date()
     });
 
-    if (status === ORDER_STATES.ACCEPTED) {
-      notifyRole('admin', {
-        title: 'Pedido aceptado',
-        message: `Pedido #${order.orderNumber} aceptado por ${store.name}`,
-        type: 'info',
-        orderId: order.id,
-        timestamp: new Date()
-      });
-    } else if (status === ORDER_STATES.READY) {
+    if (status === ORDER_STATES.READY) {
       notifyRole('driver', {
         title: '¡Nuevo pedido disponible!',
-        message: `Pedido #${order.orderNumber} listo para recoger en ${store.name}`,
+        message: `Pedido #${order.orderNumber} listo para recoger en ${order.store.name}`,
         type: 'success',
         orderId: order.id,
         timestamp: new Date()
       });
-    } else if (status === ORDER_STATES.DELIVERED) {
-      if (store) {
-        notifyUser(store.ownerId, {
-          title: 'Pedido entregado',
-          message: `Pedido #${order.orderNumber} entregado exitosamente`,
-          type: 'success',
-          orderId: order.id,
-          timestamp: new Date()
-        });
-      }
     }
 
-    saveDatabase();
     res.json({ 
       message: 'Estado actualizado exitosamente',
       order 
@@ -1188,7 +865,7 @@ app.put('/api/orders/:orderId/status', authenticateToken, (req, res) => {
   }
 });
 
-function getStatusMessage(status, order) {
+function getStatusMessage(status) {
   const messages = {
     'accepted': 'Tu pedido ha sido aceptado y está siendo preparado',
     'preparing': 'Tu pedido está en preparación',
@@ -1201,14 +878,16 @@ function getStatusMessage(status, order) {
   return messages[status] || 'Estado del pedido actualizado';
 }
 
-app.put('/api/orders/:orderId/assign', authenticateToken, (req, res) => {
+app.put('/api/orders/:orderId/assign', authenticateToken, async (req, res) => {
   try {
     if (req.user.role !== 'driver') {
       return res.status(403).json({ error: 'Solo conductores pueden asignarse pedidos' });
     }
 
     const { orderId } = req.params;
-    const order = database.orders.find(o => o.id === parseInt(orderId));
+    const order = await Order.findByPk(orderId, {
+      include: [{ model: Store, as: 'store' }]
+    });
 
     if (!order) {
       return res.status(404).json({ error: 'Pedido no encontrado' });
@@ -1222,20 +901,19 @@ app.put('/api/orders/:orderId/assign', authenticateToken, (req, res) => {
       return res.status(400).json({ error: 'El pedido ya tiene un conductor asignado' });
     }
 
-    const driver = database.users.find(u => u.id === req.user.id);
+    const driver = await User.findByPk(req.user.id);
     if (!driver.approved || !driver.available) {
       return res.status(403).json({ error: 'No estás disponible para tomar pedidos' });
     }
 
-    order.driverId = req.user.id;
-    order.driverName = driver.name;
-    order.assignedAt = new Date();
-    
     const deliveryDistance = 5;
     const driverEarnings = (order.deliveryFee * 0.7) + (deliveryDistance * 5);
-    order.driverEarnings = driverEarnings;
 
-    const store = database.stores.find(s => s.id === order.storeId);
+    await order.update({
+      driverId: req.user.id,
+      assignedAt: new Date(),
+      driverEarnings
+    });
 
     notifyUser(order.customerId, {
       title: 'Conductor asignado',
@@ -1245,7 +923,6 @@ app.put('/api/orders/:orderId/assign', authenticateToken, (req, res) => {
       timestamp: new Date()
     });
 
-    saveDatabase();
     res.json({ 
       message: 'Pedido asignado exitosamente',
       order,
@@ -1260,15 +937,16 @@ app.put('/api/orders/:orderId/assign', authenticateToken, (req, res) => {
 // CONDUCTORES
 // ============================================
 
-app.get('/api/drivers', authenticateToken, (req, res) => {
+app.get('/api/drivers', authenticateToken, async (req, res) => {
   try {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'No autorizado' });
     }
 
-    const drivers = database.users
-      .filter(u => u.role === 'driver')
-      .map(({ password, ...driver }) => driver);
+    const drivers = await User.findAll({ 
+      where: { role: 'driver' },
+      attributes: { exclude: ['password'] }
+    });
 
     res.json({ drivers });
   } catch (error) {
@@ -1276,25 +954,40 @@ app.get('/api/drivers', authenticateToken, (req, res) => {
   }
 });
 
-app.get('/api/drivers/available', (req, res) => {
+app.get('/api/drivers/available', async (req, res) => {
   try {
-    const drivers = database.users
-      .filter(u => u.role === 'driver' && u.available && u.approved)
-      .map(({ password, email, ...driver }) => ({
-        ...driver,
-        activeOrders: database.orders.filter(o => 
-          o.driverId === driver.id && 
-          !['delivered', 'cancelled'].includes(o.status)
-        ).length
-      }));
+    const drivers = await User.findAll({ 
+      where: { 
+        role: 'driver',
+        available: true,
+        approved: true
+      },
+      attributes: { exclude: ['password', 'email'] }
+    });
 
-    res.json({ drivers });
+    const driversWithOrders = await Promise.all(drivers.map(async (driver) => {
+      const activeOrders = await Order.count({
+        where: {
+          driverId: driver.id,
+          status: {
+            [sequelize.Sequelize.Op.notIn]: ['delivered', 'cancelled']
+          }
+        }
+      });
+
+      return {
+        ...driver.toJSON(),
+        activeOrders
+      };
+    }));
+
+    res.json({ drivers: driversWithOrders });
   } catch (error) {
     res.status(500).json({ error: 'Error al obtener conductores', details: error.message });
   }
 });
 
-app.put('/api/drivers/:driverId/availability', authenticateToken, (req, res) => {
+app.put('/api/drivers/:driverId/availability', authenticateToken, async (req, res) => {
   try {
     const { driverId } = req.params;
     const { available } = req.body;
@@ -1303,7 +996,9 @@ app.put('/api/drivers/:driverId/availability', authenticateToken, (req, res) => 
       return res.status(403).json({ error: 'No autorizado' });
     }
 
-    const driver = database.users.find(u => u.id === parseInt(driverId) && u.role === 'driver');
+    const driver = await User.findOne({ 
+      where: { id: driverId, role: 'driver' }
+    });
 
     if (!driver) {
       return res.status(404).json({ error: 'Conductor no encontrado' });
@@ -1313,9 +1008,8 @@ app.put('/api/drivers/:driverId/availability', authenticateToken, (req, res) => 
       return res.status(403).json({ error: 'Tu cuenta aún no ha sido aprobada' });
     }
 
-    driver.available = available;
+    await driver.update({ available });
 
-    saveDatabase();
     res.json({ 
       message: `Estado cambiado a ${available ? 'disponible' : 'no disponible'}`,
       driver: { id: driver.id, available: driver.available }
@@ -1325,7 +1019,7 @@ app.put('/api/drivers/:driverId/availability', authenticateToken, (req, res) => 
   }
 });
 
-app.put('/api/drivers/:driverId/location', authenticateToken, (req, res) => {
+app.put('/api/drivers/:driverId/location', authenticateToken, async (req, res) => {
   try {
     const { driverId } = req.params;
     const { lat, lng } = req.body;
@@ -1334,13 +1028,17 @@ app.put('/api/drivers/:driverId/location', authenticateToken, (req, res) => {
       return res.status(403).json({ error: 'No autorizado' });
     }
 
-    const driver = database.users.find(u => u.id === parseInt(driverId) && u.role === 'driver');
+    const driver = await User.findOne({ 
+      where: { id: driverId, role: 'driver' }
+    });
 
     if (!driver) {
       return res.status(404).json({ error: 'Conductor no encontrado' });
     }
 
-    driver.currentLocation = { lat, lng };
+    await driver.update({
+      currentLocation: { lat, lng }
+    });
 
     res.json({ 
       message: 'Ubicación actualizada',
@@ -1355,33 +1053,39 @@ app.put('/api/drivers/:driverId/location', authenticateToken, (req, res) => {
 // ADMIN
 // ============================================
 
-app.get('/api/admin/stats', authenticateToken, (req, res) => {
+app.get('/api/admin/stats', authenticateToken, async (req, res) => {
   try {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'No autorizado' });
     }
 
-    const allOrders = database.orders;
-    const completedOrders = allOrders.filter(o => o.status === 'delivered');
+    const allOrders = await Order.findAll();
+    const completedOrders = await Order.findAll({ where: { status: 'delivered' } });
     const today = new Date().toDateString();
 
     const stats = {
       totalOrders: allOrders.length,
       completedOrders: completedOrders.length,
-      pendingOrders: allOrders.filter(o => o.status === 'pending').length,
-      activeOrders: allOrders.filter(o => !['delivered', 'cancelled'].includes(o.status)).length,
-      cancelledOrders: allOrders.filter(o => o.status === 'cancelled').length,
+      pendingOrders: await Order.count({ where: { status: 'pending' } }),
+      activeOrders: await Order.count({ 
+        where: { 
+          status: { 
+            [sequelize.Sequelize.Op.notIn]: ['delivered', 'cancelled'] 
+          } 
+        } 
+      }),
+      cancelledOrders: await Order.count({ where: { status: 'cancelled' } }),
       totalPlatformEarnings: completedOrders.reduce((sum, o) => sum + (o.platformEarnings || 0), 0),
       totalCommissions: completedOrders.reduce((sum, o) => sum + (o.commission || 0), 0),
       totalServiceFees: completedOrders.reduce((sum, o) => sum + (o.serviceFee || 0), 0),
       totalDriverEarnings: completedOrders.reduce((sum, o) => sum + (o.driverEarnings || 0), 0),
       totalRevenue: completedOrders.reduce((sum, o) => sum + o.total, 0),
-      totalDrivers: database.users.filter(u => u.role === 'driver' && u.approved).length,
-      pendingDrivers: database.users.filter(u => u.role === 'driver' && !u.approved).length,
-      availableDrivers: database.users.filter(u => u.role === 'driver' && u.available && u.approved).length,
-      totalClients: database.users.filter(u => u.role === 'client').length,
-      totalStores: database.stores.length,
-      totalProducts: database.products.length,
+      totalDrivers: await User.count({ where: { role: 'driver', approved: true } }),
+      pendingDrivers: await User.count({ where: { role: 'driver', approved: false } }),
+      availableDrivers: await User.count({ where: { role: 'driver', available: true, approved: true } }),
+      totalClients: await User.count({ where: { role: 'client' } }),
+      totalStores: await Store.count(),
+      totalProducts: await Product.count(),
       today: today,
       ordersToday: allOrders.filter(o => new Date(o.createdAt).toDateString() === today).length,
       earningsToday: completedOrders
@@ -1401,15 +1105,16 @@ app.get('/api/admin/stats', authenticateToken, (req, res) => {
   }
 });
 
-app.get('/api/admin/drivers/pending', authenticateToken, (req, res) => {
+app.get('/api/admin/drivers/pending', authenticateToken, async (req, res) => {
   try {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'No autorizado' });
     }
 
-    const pendingDrivers = database.users
-      .filter(u => u.role === 'driver' && u.approved === false)
-      .map(({ password, ...driver }) => driver);
+    const pendingDrivers = await User.findAll({ 
+      where: { role: 'driver', approved: false },
+      attributes: { exclude: ['password'] }
+    });
 
     res.json({ drivers: pendingDrivers });
   } catch (error) {
@@ -1417,21 +1122,25 @@ app.get('/api/admin/drivers/pending', authenticateToken, (req, res) => {
   }
 });
 
-app.put('/api/admin/drivers/:driverId/approve', authenticateToken, (req, res) => {
+app.put('/api/admin/drivers/:driverId/approve', authenticateToken, async (req, res) => {
   try {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'No autorizado' });
     }
 
     const { driverId } = req.params;
-    const driver = database.users.find(u => u.id === parseInt(driverId) && u.role === 'driver');
+    const driver = await User.findOne({ 
+      where: { id: driverId, role: 'driver' }
+    });
 
     if (!driver) {
       return res.status(404).json({ error: 'Conductor no encontrado' });
     }
 
-    driver.approved = true;
-    driver.available = true;
+    await driver.update({
+      approved: true,
+      available: true
+    });
 
     notifyUser(driver.id, {
       title: '¡Cuenta aprobada!',
@@ -1440,7 +1149,6 @@ app.put('/api/admin/drivers/:driverId/approve', authenticateToken, (req, res) =>
       timestamp: new Date()
     });
 
-    saveDatabase();
     res.json({
       message: 'Conductor aprobado',
       driver: { id: driver.id, name: driver.name, email: driver.email, approved: true }
@@ -1450,20 +1158,20 @@ app.put('/api/admin/drivers/:driverId/approve', authenticateToken, (req, res) =>
   }
 });
 
-app.delete('/api/admin/drivers/:driverId/reject', authenticateToken, (req, res) => {
+app.delete('/api/admin/drivers/:driverId/reject', authenticateToken, async (req, res) => {
   try {
     if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'No autorizado' });
     }
 
     const { driverId } = req.params;
-    const driverIndex = database.users.findIndex(u => u.id === parseInt(driverId) && u.role === 'driver');
+    const driver = await User.findOne({ 
+      where: { id: driverId, role: 'driver' }
+    });
 
-    if (driverIndex === -1) {
+    if (!driver) {
       return res.status(404).json({ error: 'Conductor no encontrado' });
     }
-
-    const driver = database.users[driverIndex];
 
     notifyUser(driver.id, {
       title: 'Solicitud rechazada',
@@ -1472,22 +1180,22 @@ app.delete('/api/admin/drivers/:driverId/reject', authenticateToken, (req, res) 
       timestamp: new Date()
     });
 
-    database.users.splice(driverIndex, 1);
-    saveDatabase();
+    await driver.destroy();
+
     res.json({ message: 'Conductor rechazado' });
   } catch (error) {
     res.status(500).json({ error: 'Error al rechazar conductor', details: error.message });
   }
 });
 
-app.get('/api/stats', authenticateToken, (req, res) => {
+app.get('/api/stats', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
     const userRole = req.user.role;
     let stats = {};
 
     if (userRole === 'client') {
-      const userOrders = database.orders.filter(o => o.customerId === userId);
+      const userOrders = await Order.findAll({ where: { customerId: userId } });
       stats = {
         totalOrders: userOrders.length,
         totalSpent: userOrders.reduce((sum, o) => sum + o.total, 0),
@@ -1495,9 +1203,10 @@ app.get('/api/stats', authenticateToken, (req, res) => {
         cancelledOrders: userOrders.filter(o => o.status === 'cancelled').length
       };
     } else if (userRole === 'driver') {
-      const driver = database.users.find(u => u.id === userId);
-      const driverOrders = database.orders.filter(o => o.driverId === userId);
+      const driver = await User.findByPk(userId);
+      const driverOrders = await Order.findAll({ where: { driverId: userId } });
       const completedOrders = driverOrders.filter(o => o.status === 'delivered');
+      const today = new Date().toDateString();
       
       stats = {
         totalDeliveries: driver.totalDeliveries,
@@ -1505,30 +1214,34 @@ app.get('/api/stats', authenticateToken, (req, res) => {
         rating: driver.rating,
         activeOrders: driverOrders.filter(o => !['delivered', 'cancelled'].includes(o.status)).length,
         completedToday: completedOrders.filter(o => {
-          const today = new Date().toDateString();
           return o.deliveredAt && new Date(o.deliveredAt).toDateString() === today;
         }).length,
         earningsToday: completedOrders
           .filter(o => {
-            const today = new Date().toDateString();
             return o.deliveredAt && new Date(o.deliveredAt).toDateString() === today;
           })
           .reduce((sum, o) => sum + (o.driverEarnings || 0), 0)
       };
     } else if (userRole === 'store_owner') {
-      const userStores = database.stores.filter(s => s.ownerId === userId);
+      const userStores = await Store.findAll({ where: { ownerId: userId } });
       const storeIds = userStores.map(s => s.id);
-      const storeOrders = database.orders.filter(o => storeIds.includes(o.storeId));
+      const storeOrders = await Order.findAll({ 
+        where: { 
+          storeId: { [sequelize.Sequelize.Op.in]: storeIds } 
+        } 
+      });
       const completedOrders = storeOrders.filter(o => o.status === 'delivered');
+      const today = new Date().toDateString();
       
       stats = {
         totalStores: userStores.length,
-        totalProducts: database.products.filter(p => storeIds.includes(p.storeId)).length,
+        totalProducts: await Product.count({ 
+          where: { storeId: { [sequelize.Sequelize.Op.in]: storeIds } }
+        }),
         totalOrders: storeOrders.length,
         totalRevenue: completedOrders.reduce((sum, o) => sum + o.subtotal, 0),
         activeOrders: storeOrders.filter(o => !['delivered', 'cancelled'].includes(o.status)).length,
         ordersToday: storeOrders.filter(o => {
-          const today = new Date().toDateString();
           return new Date(o.createdAt).toDateString() === today;
         }).length
       };
@@ -1560,12 +1273,16 @@ io.on('connection', (socket) => {
     console.log(`📡 Usuario ${userId} (${role}) suscrito`);
   });
 
-  socket.on('update_location', (data) => {
+  socket.on('update_location', async (data) => {
     const { driverId, lat, lng } = data;
-    const driver = database.users.find(u => u.id === driverId);
-    if (driver) {
-      driver.currentLocation = { lat, lng };
-      io.emit('driver_location_update', { driverId, location: { lat, lng } });
+    try {
+      const driver = await User.findByPk(driverId);
+      if (driver) {
+        await driver.update({ currentLocation: { lat, lng } });
+        io.emit('driver_location_update', { driverId, location: { lat, lng } });
+      }
+    } catch (error) {
+      console.error('Error actualizando ubicación:', error);
     }
   });
 
@@ -1613,21 +1330,31 @@ app.get('/admin', (req, res) => {
 // HEALTH CHECK
 // ============================================
 
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    timestamp: new Date(),
-    uptime: process.uptime(),
-    stores: database.stores.length,
-    products: database.products.length,
-    orders: database.orders.length,
-    connectedUsers: userSockets.size,
-    environment: process.env.NODE_ENV || 'development'
-  });
+app.get('/health', async (req, res) => {
+  try {
+    const dbStatus = await testConnection();
+    
+    res.json({
+      status: 'ok',
+      timestamp: new Date(),
+      uptime: process.uptime(),
+      database: dbStatus ? 'connected' : 'disconnected',
+      stores: await Store.count(),
+      products: await Product.count(),
+      orders: await Order.count(),
+      connectedUsers: userSockets.size,
+      environment: process.env.NODE_ENV || 'development'
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'error',
+      error: error.message
+    });
+  }
 });
 
 // ============================================
-// ✅ MANEJO DE ERRORES GLOBAL
+// MANEJO DE ERRORES GLOBAL
 // ============================================
 
 app.use((err, req, res, next) => {
@@ -1651,55 +1378,82 @@ app.use((req, res) => {
 // INICIAR SERVIDOR
 // ============================================
 
-server.listen(PORT, () => {
-  console.log(`\n${'='.repeat(60)}`);
-  console.log(`🚀 SERVIDOR DE DELIVERY INICIADO`);
-  console.log(`${'='.repeat(60)}`);
-  console.log(`🌐 Puerto: ${PORT}`);
-  console.log(`🔒 Modo: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`📡 WebSocket: Habilitado`);
-  console.log(`🔔 Notificaciones: Activas`);
-  console.log(`🛡️  Seguridad: Helmet ✅ | Rate Limiting ✅ | Bcrypt ✅`);
-  console.log(`💰 Comisión: ${COMMISSION_RATE * 100}% | Fee de servicio: ${SERVICE_FEE}`);
-  console.log(`🏪 Tiendas: ${database.stores.length} | 📦 Productos: ${database.products.length}`);
-  console.log(`\n📋 FLUJO DE ESTADOS DE PEDIDOS:`);
-  console.log(`   1. PENDING    → Cliente crea pedido`);
-  console.log(`   2. ACCEPTED   → Tienda acepta`);
-  console.log(`   3. PREPARING  → Tienda prepara`);
-  console.log(`   4. READY      → Listo para recoger`);
-  console.log(`   5. PICKED_UP  → Conductor recoge`);
-  console.log(`   6. ON_WAY     → En camino al cliente`);
-  console.log(`   7. DELIVERED  → ✅ Entregado`);
-  console.log(`\n👥 USUARIOS DE PRUEBA:`);
-  console.log(`   Cliente:    cliente@delivery.com / cliente123`);
-  console.log(`   Conductor:  conductor@delivery.com / conductor123`);
-  console.log(`   Tienda:     tienda@delivery.com / tienda123`);
-  console.log(`   Admin:      admin@delivery.com / admin123`);
-  console.log(`\n⚠️  IMPORTANTE:`);
-  console.log(`   - Las contraseñas están HASHEADAS con bcrypt ✅`);
-  console.log(`   - Rate limiting activo (5 intentos cada 15 min) ✅`);
-  console.log(`   - JWT_SECRET configurado desde .env ✅`);
-  console.log(`   - Helmet activo para seguridad HTTP ✅`);
-  console.log(`${'='.repeat(60)}\n`);
-});
+async function startServer() {
+  try {
+    // ✅ Conectar a PostgreSQL
+    const dbConnected = await testConnection();
+    
+    if (!dbConnected) {
+      console.error('❌ No se pudo conectar a PostgreSQL');
+      console.error('💡 Verifica que DATABASE_URL esté configurado en .env');
+      process.exit(1);
+    }
 
-// ✅ Manejar cierre graceful
-process.on('SIGTERM', () => {
+    // ✅ Sincronizar modelos (crear tablas si no existen)
+    await sequelize.sync({ alter: false }); // alter: true actualizaría las tablas
+    console.log('✅ Modelos sincronizados con PostgreSQL');
+
+    // ✅ Verificar si hay usuarios, si no, sugerir seed
+    const userCount = await User.count();
+    if (userCount === 0) {
+      console.log('\n⚠️  La base de datos está vacía');
+      console.log('💡 Ejecuta: node scripts/seed.js para poblar datos iniciales\n');
+    }
+
+    // ✅ Iniciar servidor
+    server.listen(PORT, () => {
+      console.log(`\n${'='.repeat(60)}`);
+      console.log(`🚀 SERVIDOR DE DELIVERY INICIADO`);
+      console.log(`${'='.repeat(60)}`);
+      console.log(`🌐 Puerto: ${PORT}`);
+      console.log(`🔒 Modo: ${process.env.NODE_ENV || 'development'}`);
+      console.log(`🗄️  Base de datos: PostgreSQL ✅`);
+      console.log(`📡 WebSocket: Habilitado`);
+      console.log(`🔔 Notificaciones: Activas`);
+      console.log(`🛡️  Seguridad: Helmet ✅ | Rate Limiting ✅ | Bcrypt ✅`);
+      console.log(`💰 Comisión: ${COMMISSION_RATE * 100}% | Fee de servicio: ${SERVICE_FEE}`);
+      console.log(`\n📋 FLUJO DE ESTADOS DE PEDIDOS:`);
+      console.log(`   1. PENDING    → Cliente crea pedido`);
+      console.log(`   2. ACCEPTED   → Tienda acepta`);
+      console.log(`   3. PREPARING  → Tienda prepara`);
+      console.log(`   4. READY      → Listo para recoger`);
+      console.log(`   5. PICKED_UP  → Conductor recoge`);
+      console.log(`   6. ON_WAY     → En camino al cliente`);
+      console.log(`   7. DELIVERED  → ✅ Entregado`);
+      console.log(`\n👥 USUARIOS DE PRUEBA:`);
+      console.log(`   Cliente:    cliente@delivery.com / cliente123`);
+      console.log(`   Conductor:  conductor@delivery.com / conductor123`);
+      console.log(`   Tienda:     tienda@delivery.com / tienda123`);
+      console.log(`   Admin:      admin@delivery.com / admin123`);
+      console.log(`${'='.repeat(60)}\n`);
+    });
+
+  } catch (error) {
+    console.error('❌ Error al iniciar servidor:', error);
+    process.exit(1);
+  }
+}
+
+// Manejar cierre graceful
+process.on('SIGTERM', async () => {
   console.log('👋 SIGTERM recibido, cerrando servidor...');
+  await sequelize.close();
   server.close(() => {
     console.log('✅ Servidor cerrado');
-    saveDatabase();
     process.exit(0);
   });
 });
 
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
   console.log('\n👋 SIGINT recibido, cerrando servidor...');
+  await sequelize.close();
   server.close(() => {
     console.log('✅ Servidor cerrado');
-    saveDatabase();
     process.exit(0);
   });
 });
+
+// ✅ Iniciar servidor
+startServer();
 
 module.exports = { app, server, io };
