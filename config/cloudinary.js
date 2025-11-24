@@ -59,19 +59,38 @@ async function deleteImage(imageUrl) {
 
     // Extraer el public_id de la URL
     const urlParts = imageUrl.split('/');
-    const publicIdWithExtension = urlParts.slice(-2).join('/');
-    const publicId = publicIdWithExtension.split('.')[0];
+    // Esto toma las últimas dos partes (ej: 'delivery/stores/id-imagen.png') y elimina la extensión
+    const publicIdWithExtension = urlParts.slice(-2).join('/').split('.')[0];
+    const publicId = publicIdWithExtension.includes('/') 
+                     ? publicIdWithExtension 
+                     : urlParts[urlParts.length - 2] + '/' + publicIdWithExtension;
+    
+    console.log(`Intentando eliminar public_id: ${publicId}`);
 
-    await cloudinary.uploader.destroy(publicId);
-    return true;
+    // Determinar el resource_type (image por defecto)
+    const resourceType = imageUrl.includes('/video/') ? 'video' : 'image';
+
+    const result = await cloudinary.uploader.destroy(publicId, {
+      resource_type: resourceType,
+      invalidate: true
+    });
+    
+    if (result.result === 'not found') {
+        console.warn(`Cloudinary: Public ID no encontrado o ya eliminado: ${publicId}`);
+        return false;
+    }
+
+    return result.result === 'ok';
+
   } catch (error) {
-    console.error('Error eliminando de Cloudinary:', error);
-    return false;
+    console.error('Error al eliminar imagen de Cloudinary:', error);
+    // Si falla la API de Cloudinary, asumimos que no es un error fatal para el proceso de la app
+    return false; 
   }
 }
 
+// ✅ CORRECCIÓN: Exporta las funciones para que server.js pueda usarlas
 module.exports = {
   uploadImage,
-  deleteImage,
-  cloudinary
+  deleteImage
 };
