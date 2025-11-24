@@ -137,7 +137,7 @@ router.post('/stores', authenticateToken, checkRole('store_owner'), multer().sin
             return res.status(400).json({ error: 'El logo de la tienda es requerido' });
         }
 
-        // Usar req.file.buffer y especificar 'stores' (Corrección de Cloudinary #2 y #3)
+        // Usar req.file.buffer y especificar 'stores'
         const logoUrl = await uploadImage(req.file.buffer, 'stores'); 
 
         const { name, description, address, phone, category } = req.body;
@@ -152,7 +152,7 @@ router.post('/stores', authenticateToken, checkRole('store_owner'), multer().sin
             isOpen: true,
             rating: 0,
             deliveryTime: '30-45 min',
-            // 🔥 CORRECCIÓN: Agregando valores predeterminados para evitar la Violación NotNull
+            // Agregando valores predeterminados para evitar la Violación NotNull
             deliveryFee: 0, 
             minOrder: 0,    
             location: address || 'Ubicación no especificada', 
@@ -217,7 +217,7 @@ router.post('/products', authenticateToken, checkRole('store_owner'), multer().s
             return res.status(403).json({ error: 'Tienda no válida o no te pertenece' });
         }
 
-        // Usar req.file.buffer y especificar 'products' (Corrección de Cloudinary #2 y #3)
+        // Usar req.file.buffer y especificar 'products' 
         const imageUrl = await uploadImage(req.file.buffer, 'products');
 
         const product = await Product.create({
@@ -318,7 +318,8 @@ router.get('/orders', authenticateToken, async (req, res) => {
             where: whereClause,
             include: [
                 { model: User, as: 'customer', attributes: ['name', 'email', 'phone'] },
-                { model: Store, as: 'store', attributes: ['name', 'address', 'phone'] }
+                // ✅ CORRECCIÓN: Se cambió 'address' por 'direccion' para coincidir con el nombre de columna en la DB.
+                { model: Store, as: 'store', attributes: ['name', 'direccion', 'phone'] } 
             ],
             order: [['createdAt', 'DESC']]
         });
@@ -434,7 +435,7 @@ app.get('/:page?', (req, res) => {
   if (validPages.includes(page)) {
     res.sendFile(path.join(__dirname, 'public', `${page}.html`));
   } else {
-    // ✅ CORRECCIÓN FINAL: Si la página no es válida y no existe 404.html, enviar un mensaje 404 simple.
+    // Si la página no es válida y no existe 404.html, enviar un mensaje 404 simple.
     res.status(404).send('404 | Página no encontrada.');
   }
 });
