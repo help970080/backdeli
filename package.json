@@ -34,8 +34,8 @@
     "pg": "^8.16.3",
     "sequelize": "^6.37.7",
     "socket.io": "^4.6.0",
-    "cloudinary": "^1.41.0",           <-- AGREGADO
-    "multer-storage-cloudinary": "^4.0.0" <-- AGREGADO
+    "cloudinary": "^1.41.0",
+    "multer-storage-cloudinary": "^4.0.0"
   },
   "devDependencies": {
     "eslint": "^8.55.0",
