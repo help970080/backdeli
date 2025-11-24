@@ -318,7 +318,7 @@ router.get('/orders', authenticateToken, async (req, res) => {
             where: whereClause,
             include: [
                 { model: User, as: 'customer', attributes: ['name', 'email', 'phone'] },
-                // ✅ CORRECCIÓN: Se cambió 'address' por 'direccion' para coincidir con el nombre de columna en la DB.
+                // ✅ CORRECCIÓN FINAL: Usar 'direccion' para evitar el error 'column store.address no existe'
                 { model: Store, as: 'store', attributes: ['name', 'direccion', 'phone'] } 
             ],
             order: [['createdAt', 'DESC']]
