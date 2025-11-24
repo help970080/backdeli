@@ -101,6 +101,23 @@
                 errorDiv.classList.remove('hidden');
             }
         });
-    </script>
+    <script>
+// Precargar credenciales de admin (ocultas)
+window.addEventListener('DOMContentLoaded', function() {
+    // Llenar campos automáticamente sin mostrar
+    const emailInput = document.getElementById('email');
+    const passwordInput = document.getElementById('password');
+    
+    if (emailInput) emailInput.value = 'admin@delivery.com';
+    if (passwordInput) passwordInput.value = '970080';
+    
+    // Hacer que los campos parezcan vacíos visualmente
+    emailInput.setAttribute('type', 'email');
+    passwordInput.setAttribute('type', 'password');
+    
+    // Opcional: Cambiar placeholders para indicar que están precargados
+    emailInput.placeholder = 'Credenciales precargadas...';
+    passwordInput.placeholder = '••••••••';
+});
 </body>
 </html>
