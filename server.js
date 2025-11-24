@@ -25,6 +25,10 @@ const io = new Server(server, {
   }
 });
 
+// 🔥 IMPORTANTE: Configurar trust proxy para Render
+// Render usa un proxy reverso, necesitamos confiar en el primer proxy
+app.set('trust proxy', 1);
+
 app.use(helmet({
   contentSecurityPolicy: false,
   crossOriginEmbedderPolicy: false
