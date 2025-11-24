@@ -64,29 +64,19 @@ function notifyMultiple(userIds, notification) {
   userIds.forEach(userId => notifyUser(userId, notification));
 }
 
-const uploadsDir = path.join(__dirname, 'uploads');
-const storesDir = path.join(__dirname, 'uploads/stores');
-const productsDir = path.join(__dirname, 'uploads/products');
+/* ---------------------------
+   CLOUDINARY + MULTER STORAGE
+   --------------------------- */
+const cloudinary = require('cloudinary').v2;
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
-[uploadsDir, storesDir, productsDir].forEach(dir => {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const type = req.body.type || 'general';
-    const dest = type === 'store' ? storesDir : 
-                  type === 'product' ? productsDir : uploadsDir;
-    cb(null, dest);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
-  }
-});
-
+// keep a MIME check similar to before
 const fileFilter = (req, file, cb) => {
   const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
   if (allowedTypes.includes(file.mimetype)) {
@@ -96,16 +86,25 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-const upload = multer({ 
-  storage: storage,
-  fileFilter: fileFilter,
+const cloudinaryStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'app_images', // puedes cambiar el folder si quieres
+    allowed_formats: ['jpg', 'jpeg', 'png', 'webp']
+  }
+});
+
+const upload = multer({
+  storage: cloudinaryStorage,
+  fileFilter,
   limits: { fileSize: 5 * 1024 * 1024 }
 });
+/* --------------------------- */
 
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
-app.use('/uploads', express.static('uploads'));
+// removed: app.use('/uploads', express.static('uploads'));
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const PORT = process.env.PORT || 3000;
@@ -374,7 +373,7 @@ app.post('/api/stores', authenticateToken, upload.single('image'), async (req, r
       name,
       description,
       category,
-      image: req.file ? `/uploads/stores/${req.file.filename}` : null,
+      image: req.file ? req.file.path : null,
       deliveryTime,
       deliveryFee: parseFloat(deliveryFee),
       minOrder: parseFloat(minOrder),
@@ -414,7 +413,7 @@ app.put('/api/stores/:storeId', authenticateToken, upload.single('image'), async
     if (deliveryFee) updates.deliveryFee = parseFloat(deliveryFee);
     if (minOrder) updates.minOrder = parseFloat(minOrder);
     if (typeof isOpen !== 'undefined') updates.isOpen = isOpen === 'true' || isOpen === true;
-    if (req.file) updates.image = `/uploads/stores/${req.file.filename}`;
+    if (req.file) updates.image = req.file.path;
     if (address || lat || lng) {
       updates.location = {
         lat: lat ? parseFloat(lat) : store.location.lat,
@@ -494,7 +493,7 @@ app.post('/api/products', authenticateToken, upload.single('image'), async (req,
       name,
       description,
       price: parseFloat(price),
-      image: req.file ? `/uploads/products/${req.file.filename}` : null,
+      image: req.file ? req.file.path : null,
       category,
       preparationTime: parseInt(preparationTime) || 15
     });
@@ -531,7 +530,7 @@ app.put('/api/products/:productId', authenticateToken, upload.single('image'), a
     if (category) updates.category = category;
     if (typeof available !== 'undefined') updates.available = available === 'true' || available === true;
     if (preparationTime) updates.preparationTime = parseInt(preparationTime);
-    if (req.file) updates.image = `/uploads/products/${req.file.filename}`;
+    if (req.file) updates.image = req.file.path;
 
     await product.update(updates);
 
@@ -965,7 +964,7 @@ app.put('/api/drivers/:driverId/availability', authenticateToken, async (req, re
     const { driverId } = req.params;
     const { available } = req.body;
 
-    if (req.user.id !== parseInt(driverId) && req.user.role !== 'admin') {
+    If (req.user.id !== parseInt(driverId) && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'No autorizado' });
     }
 
@@ -1067,154 +1066,6 @@ app.get('/api/admin/stats', authenticateToken, async (req, res) => {
         ? completedOrders.reduce((sum, o) => sum + (o.platformEarnings || 0), 0) / completedOrders.length
         : 0
     };
-
-    res.json({ stats });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al obtener estadísticas', details: error.message });
-  }
-});
-
-app.get('/api/admin/drivers/pending', authenticateToken, async (req, res) => {
-  try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'No autorizado' });
-    }
-
-    const pendingDrivers = await User.findAll({ 
-      where: { role: 'driver', approved: false },
-      attributes: { exclude: ['password'] }
-    });
-
-    res.json({ drivers: pendingDrivers });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al obtener conductores', details: error.message });
-  }
-});
-
-app.put('/api/admin/drivers/:driverId/approve', authenticateToken, async (req, res) => {
-  try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'No autorizado' });
-    }
-
-    const { driverId } = req.params;
-    const driver = await User.findOne({ 
-      where: { id: driverId, role: 'driver' }
-    });
-
-    if (!driver) {
-      return res.status(404).json({ error: 'Conductor no encontrado' });
-    }
-
-    await driver.update({
-      approved: true,
-      available: true
-    });
-
-    notifyUser(driver.id, {
-      title: '¡Cuenta aprobada!',
-      message: 'Tu cuenta de conductor ha sido aprobada. Ya puedes comenzar a tomar pedidos.',
-      type: 'success',
-      timestamp: new Date()
-    });
-
-    res.json({
-      message: 'Conductor aprobado',
-      driver: { id: driver.id, name: driver.name, email: driver.email, approved: true }
-    });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al aprobar conductor', details: error.message });
-  }
-});
-
-app.delete('/api/admin/drivers/:driverId/reject', authenticateToken, async (req, res) => {
-  try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'No autorizado' });
-    }
-
-    const { driverId } = req.params;
-    const driver = await User.findOne({ 
-      where: { id: driverId, role: 'driver' }
-    });
-
-    if (!driver) {
-      return res.status(404).json({ error: 'Conductor no encontrado' });
-    }
-
-    notifyUser(driver.id, {
-      title: 'Solicitud rechazada',
-      message: 'Tu solicitud de conductor no ha sido aprobada.',
-      type: 'warning',
-      timestamp: new Date()
-    });
-
-    await driver.destroy();
-
-    res.json({ message: 'Conductor rechazado' });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al rechazar conductor', details: error.message });
-  }
-});
-
-app.get('/api/stats', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const userRole = req.user.role;
-    let stats = {};
-
-    if (userRole === 'client') {
-      const userOrders = await Order.findAll({ where: { customerId: userId } });
-      stats = {
-        totalOrders: userOrders.length,
-        totalSpent: userOrders.reduce((sum, o) => sum + o.total, 0),
-        completedOrders: userOrders.filter(o => o.status === 'delivered').length,
-        cancelledOrders: userOrders.filter(o => o.status === 'cancelled').length
-      };
-    } else if (userRole === 'driver') {
-      const driver = await User.findByPk(userId);
-      const driverOrders = await Order.findAll({ where: { driverId: userId } });
-      const completedOrders = driverOrders.filter(o => o.status === 'delivered');
-      const today = new Date().toDateString();
-      
-      stats = {
-        totalDeliveries: driver.totalDeliveries,
-        totalEarnings: driver.totalEarnings,
-        rating: driver.rating,
-        activeOrders: driverOrders.filter(o => !['delivered', 'cancelled'].includes(o.status)).length,
-        completedToday: completedOrders.filter(o => {
-          return o.deliveredAt && new Date(o.deliveredAt).toDateString() === today;
-        }).length,
-        earningsToday: completedOrders
-          .filter(o => {
-            return o.deliveredAt && new Date(o.deliveredAt).toDateString() === today;
-          })
-          .reduce((sum, o) => sum + (o.driverEarnings || 0), 0)
-      };
-    } else if (userRole === 'store_owner') {
-      const userStores = await Store.findAll({ where: { ownerId: userId } });
-      const storeIds = userStores.map(s => s.id);
-      const storeOrders = await Order.findAll({ 
-        where: { 
-          storeId: { [sequelize.Sequelize.Op.in]: storeIds } 
-        } 
-      });
-      const completedOrders = storeOrders.filter(o => o.status === 'delivered');
-      const today = new Date().toDateString();
-      
-      stats = {
-        totalStores: userStores.length,
-        totalProducts: await Product.count({ 
-          where: { storeId: { [sequelize.Sequelize.Op.in]: storeIds } }
-        }),
-        totalOrders: storeOrders.length,
-        totalRevenue: completedOrders.reduce((sum, o) => sum + o.subtotal, 0),
-        activeOrders: storeOrders.filter(o => !['delivered', 'cancelled'].includes(o.status)).length,
-        ordersToday: storeOrders.filter(o => {
-          return new Date(o.createdAt).toDateString() === today;
-        }).length
-      };
-    }
 
     res.json({ stats });
   } catch (error) {
