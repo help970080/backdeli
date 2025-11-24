@@ -9,8 +9,6 @@ const multer = require('multer');
 const bcrypt = require('bcryptjs');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-
-// 🔥 IMPORTAR CLOUDINARY
 const { uploadImage, deleteImage } = require('./config/cloudinary');
 
 const { User, Store, Product, Order, sequelize } = require('./models');
@@ -24,10 +22,6 @@ const io = new Server(server, {
     methods: ["GET", "POST", "PUT", "DELETE"]
   }
 });
-
-// 🔥 IMPORTANTE: Configurar trust proxy para Render
-// Render usa un proxy reverso, necesitamos confiar en el primer proxy
-app.set('trust proxy', 1);
 
 app.use(helmet({
   contentSecurityPolicy: false,
@@ -70,7 +64,7 @@ function notifyMultiple(userIds, notification) {
   userIds.forEach(userId => notifyUser(userId, notification));
 }
 
-// 🔥 CONFIGURACIÓN DE MULTER CON MEMORIA (en vez de disco)
+// Configuración de multer para memoria (Cloudinary)
 const storage = multer.memoryStorage();
 
 const fileFilter = (req, file, cb) => {
@@ -249,12 +243,21 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
 
     const user = await User.findOne({ where: { email } });
 
-    if (!user || !(await bcrypt.compare(password, user.password))) {
+    if (!user) {
+      return res.status(401).json({ error: 'Credenciales inválidas' });
+    }
+
+    const validPassword = await bcrypt.compare(password, user.password);
+
+    if (!validPassword) {
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
 
     if (user.role === 'driver' && !user.approved) {
-      return res.status(403).json({ error: 'Tu cuenta de conductor está pendiente de aprobación' });
+      return res.status(403).json({ 
+        error: 'Tu cuenta de conductor está pendiente de aprobación',
+        pending: true
+      });
     }
 
     const token = jwt.sign(
@@ -266,7 +269,11 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
     const userResponse = user.toJSON();
     delete userResponse.password;
 
-    res.json({ token, user: userResponse });
+    res.json({ 
+      message: 'Login exitoso',
+      token,
+      user: userResponse
+    });
   } catch (error) {
     console.error('Error en login:', error);
     res.status(500).json({ error: 'Error al iniciar sesión', details: error.message });
@@ -275,83 +282,17 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
 
 app.get('/api/users/profile', authenticateToken, async (req, res) => {
   try {
-    const user = await User.findByPk(req.user.id, {
-      attributes: { exclude: ['password'] }
-    });
-
-    if (!user) {
-      return res.status(404).json({ error: 'Usuario no encontrado' });
-    }
-
-    res.json({ user });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al obtener perfil', details: error.message });
-  }
-});
-
-app.put('/api/users/profile', authenticateToken, async (req, res) => {
-  try {
-    const { name, phone, address, vehicle } = req.body;
     const user = await User.findByPk(req.user.id);
-
     if (!user) {
       return res.status(404).json({ error: 'Usuario no encontrado' });
     }
-
-    await user.update({
-      ...(name && { name }),
-      ...(phone && { phone }),
-      ...(address && { address }),
-      ...(vehicle && { vehicle })
-    });
 
     const userResponse = user.toJSON();
     delete userResponse.password;
 
-    res.json({ message: 'Perfil actualizado', user: userResponse });
+    res.json({ user: userResponse });
   } catch (error) {
-    res.status(500).json({ error: 'Error al actualizar perfil', details: error.message });
-  }
-});
-
-// 🔥 CREAR TIENDA CON CLOUDINARY
-app.post('/api/stores', authenticateToken, upload.single('logo'), async (req, res) => {
-  try {
-    if (req.user.role !== 'store_owner') {
-      return res.status(403).json({ error: 'Solo los dueños de tienda pueden crear tiendas' });
-    }
-
-    const { name, description, address, phone, category } = req.body;
-
-    if (!name || !address || !phone) {
-      return res.status(400).json({ error: 'Faltan campos requeridos' });
-    }
-
-    let logoUrl = null;
-    
-    // 🔥 Subir logo a Cloudinary si existe
-    if (req.file) {
-      console.log('📤 Subiendo logo a Cloudinary...');
-      logoUrl = await uploadImage(req.file.buffer, 'stores', `store-${Date.now()}`);
-      console.log('✅ Logo subido:', logoUrl);
-    }
-
-    const newStore = await Store.create({
-      name,
-      description,
-      address,
-      phone,
-      category: category || 'general',
-      logo: logoUrl,
-      ownerId: req.user.id,
-      isOpen: true,
-      rating: 5.0
-    });
-
-    res.status(201).json({ message: 'Tienda creada exitosamente', store: newStore });
-  } catch (error) {
-    console.error('Error creando tienda:', error);
-    res.status(500).json({ error: 'Error al crear tienda', details: error.message });
+    res.status(500).json({ error: 'Error al obtener usuario', details: error.message });
   }
 });
 
@@ -359,18 +300,8 @@ app.get('/api/stores', async (req, res) => {
   try {
     const { category } = req.query;
     const where = category ? { category } : {};
-    
-    const stores = await Store.findAll({
-      where,
-      include: [
-        {
-          model: User,
-          as: 'owner',
-          attributes: ['id', 'name', 'phone']
-        }
-      ],
-      order: [['rating', 'DESC']]
-    });
+
+    const stores = await Store.findAll({ where });
 
     res.json({ stores });
   } catch (error) {
@@ -378,31 +309,62 @@ app.get('/api/stores', async (req, res) => {
   }
 });
 
-app.get('/api/stores/:id', async (req, res) => {
+app.get('/api/stores/:storeId', async (req, res) => {
   try {
-    const store = await Store.findByPk(req.params.id, {
-      include: [
-        {
-          model: User,
-          as: 'owner',
-          attributes: ['id', 'name', 'phone']
-        }
-      ]
-    });
+    const { storeId } = req.params;
+    const store = await Store.findByPk(storeId);
 
     if (!store) {
       return res.status(404).json({ error: 'Tienda no encontrada' });
     }
 
-    res.json({ store });
+    const products = await Product.findAll({ where: { storeId } });
+
+    res.json({ store, products });
   } catch (error) {
     res.status(500).json({ error: 'Error al obtener tienda', details: error.message });
   }
 });
 
-app.put('/api/stores/:id', authenticateToken, async (req, res) => {
+app.post('/api/stores', authenticateToken, upload.single('image'), async (req, res) => {
   try {
-    const store = await Store.findByPk(req.params.id);
+    if (req.user.role !== 'store_owner' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    const { name, description, category, deliveryTime, deliveryFee, minOrder, address, lat, lng } = req.body;
+
+    let imageUrl = null;
+    if (req.file) {
+      imageUrl = await uploadImage(req.file.buffer, 'stores', `store-${Date.now()}`);
+    }
+
+    const newStore = await Store.create({
+      name,
+      description,
+      category,
+      image: imageUrl,
+      deliveryTime,
+      deliveryFee: parseFloat(deliveryFee),
+      minOrder: parseFloat(minOrder),
+      ownerId: req.user.id,
+      location: { lat: parseFloat(lat), lng: parseFloat(lng), address }
+    });
+
+    res.status(201).json({ 
+      message: 'Tienda creada exitosamente',
+      store: newStore 
+    });
+  } catch (error) {
+    console.error('Error al crear tienda:', error);
+    res.status(500).json({ error: 'Error al crear tienda', details: error.message });
+  }
+});
+
+app.put('/api/stores/:storeId', authenticateToken, upload.single('image'), async (req, res) => {
+  try {
+    const { storeId } = req.params;
+    const store = await Store.findByPk(storeId);
 
     if (!store) {
       return res.status(404).json({ error: 'Tienda no encontrada' });
@@ -412,68 +374,85 @@ app.put('/api/stores/:id', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'No autorizado' });
     }
 
-    await store.update(req.body);
+    const { name, description, category, deliveryTime, deliveryFee, minOrder, isOpen, address, lat, lng } = req.body;
 
-    res.json({ message: 'Tienda actualizada', store });
+    const updates = {};
+    if (name) updates.name = name;
+    if (description) updates.description = description;
+    if (category) updates.category = category;
+    if (deliveryTime) updates.deliveryTime = deliveryTime;
+    if (deliveryFee) updates.deliveryFee = parseFloat(deliveryFee);
+    if (minOrder) updates.minOrder = parseFloat(minOrder);
+    if (typeof isOpen !== 'undefined') updates.isOpen = isOpen === 'true' || isOpen === true;
+    
+    if (req.file) {
+      if (store.image) {
+        await deleteImage(store.image);
+      }
+      updates.image = await uploadImage(req.file.buffer, 'stores', `store-${storeId}-${Date.now()}`);
+    }
+    
+    if (address || lat || lng) {
+      updates.location = {
+        lat: lat ? parseFloat(lat) : store.location.lat,
+        lng: lng ? parseFloat(lng) : store.location.lng,
+        address: address || store.location.address
+      };
+    }
+
+    await store.update(updates);
+
+    res.json({ 
+      message: 'Tienda actualizada exitosamente',
+      store 
+    });
   } catch (error) {
     res.status(500).json({ error: 'Error al actualizar tienda', details: error.message });
   }
 });
 
-// 🔥 CREAR PRODUCTO CON CLOUDINARY
-app.post('/api/products', authenticateToken, upload.single('image'), async (req, res) => {
+app.delete('/api/stores/:storeId', authenticateToken, async (req, res) => {
   try {
-    if (req.user.role !== 'store_owner') {
-      return res.status(403).json({ error: 'Solo los dueños de tienda pueden crear productos' });
-    }
-
-    const { name, description, price, category, storeId } = req.body;
-
-    if (!name || !price || !storeId) {
-      return res.status(400).json({ error: 'Faltan campos requeridos' });
-    }
-
+    const { storeId } = req.params;
     const store = await Store.findByPk(storeId);
+
     if (!store) {
       return res.status(404).json({ error: 'Tienda no encontrada' });
     }
 
-    if (store.ownerId !== req.user.id) {
-      return res.status(403).json({ error: 'No autorizado para esta tienda' });
+    if (store.ownerId !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'No autorizado' });
     }
 
-    let imageUrl = null;
-    
-    // 🔥 Subir imagen a Cloudinary si existe
-    if (req.file) {
-      console.log('📤 Subiendo imagen de producto a Cloudinary...');
-      imageUrl = await uploadImage(req.file.buffer, 'products', `product-${Date.now()}`);
-      console.log('✅ Imagen subida:', imageUrl);
+    if (store.image) {
+      await deleteImage(store.image);
     }
 
-    const newProduct = await Product.create({
-      name,
-      description,
-      price: parseFloat(price),
-      category: category || 'general',
-      image: imageUrl,
-      storeId: parseInt(storeId),
-      available: true
-    });
+    const products = await Product.findAll({ where: { storeId } });
+    for (const product of products) {
+      if (product.image) {
+        await deleteImage(product.image);
+      }
+    }
 
-    res.status(201).json({ message: 'Producto creado exitosamente', product: newProduct });
+    await Product.destroy({ where: { storeId } });
+    await store.destroy();
+
+    res.json({ message: 'Tienda eliminada exitosamente' });
   } catch (error) {
-    console.error('Error creando producto:', error);
-    res.status(500).json({ error: 'Error al crear producto', details: error.message });
+    res.status(500).json({ error: 'Error al eliminar tienda', details: error.message });
   }
 });
 
 app.get('/api/stores/:storeId/products', async (req, res) => {
   try {
-    const products = await Product.findAll({
-      where: { storeId: req.params.storeId },
-      order: [['available', 'DESC'], ['name', 'ASC']]
-    });
+    const { storeId } = req.params;
+    const { category } = req.query;
+    
+    const where = { storeId: parseInt(storeId) };
+    if (category) where.category = category;
+
+    const products = await Product.findAll({ where });
 
     res.json({ products });
   } catch (error) {
@@ -481,55 +460,111 @@ app.get('/api/stores/:storeId/products', async (req, res) => {
   }
 });
 
-app.put('/api/products/:id', authenticateToken, async (req, res) => {
+app.post('/api/products', authenticateToken, upload.single('image'), async (req, res) => {
   try {
-    const product = await Product.findByPk(req.params.id, {
-      include: [{ model: Store, as: 'store' }]
+    if (req.user.role !== 'store_owner' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    const { storeId, name, description, price, category, preparationTime } = req.body;
+    
+    const store = await Store.findByPk(storeId);
+    if (!store) {
+      return res.status(404).json({ error: 'Tienda no encontrada' });
+    }
+
+    if (store.ownerId !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'No autorizado para esta tienda' });
+    }
+
+    let imageUrl = null;
+    if (req.file) {
+      imageUrl = await uploadImage(req.file.buffer, 'products', `product-${Date.now()}`);
+    }
+
+    const newProduct = await Product.create({
+      storeId: parseInt(storeId),
+      name,
+      description,
+      price: parseFloat(price),
+      image: imageUrl,
+      category,
+      preparationTime: parseInt(preparationTime) || 15
     });
+
+    res.status(201).json({ 
+      message: 'Producto creado exitosamente',
+      product: newProduct 
+    });
+  } catch (error) {
+    console.error('Error al crear producto:', error);
+    res.status(500).json({ error: 'Error al crear producto', details: error.message });
+  }
+});
+
+app.put('/api/products/:productId', authenticateToken, upload.single('image'), async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const product = await Product.findByPk(productId);
 
     if (!product) {
       return res.status(404).json({ error: 'Producto no encontrado' });
     }
 
-    if (product.store.ownerId !== req.user.id && req.user.role !== 'admin') {
+    const store = await Store.findByPk(product.storeId);
+    if (store.ownerId !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'No autorizado' });
     }
 
-    await product.update(req.body);
+    const { name, description, price, category, available, preparationTime } = req.body;
 
-    res.json({ message: 'Producto actualizado', product });
+    const updates = {};
+    if (name) updates.name = name;
+    if (description) updates.description = description;
+    if (price) updates.price = parseFloat(price);
+    if (category) updates.category = category;
+    if (typeof available !== 'undefined') updates.available = available === 'true' || available === true;
+    if (preparationTime) updates.preparationTime = parseInt(preparationTime);
+    
+    if (req.file) {
+      if (product.image) {
+        await deleteImage(product.image);
+      }
+      updates.image = await uploadImage(req.file.buffer, 'products', `product-${productId}-${Date.now()}`);
+    }
+
+    await product.update(updates);
+
+    res.json({ 
+      message: 'Producto actualizado exitosamente',
+      product 
+    });
   } catch (error) {
     res.status(500).json({ error: 'Error al actualizar producto', details: error.message });
   }
 });
 
-// 🔥 ELIMINAR PRODUCTO Y SU IMAGEN DE CLOUDINARY
-app.delete('/api/products/:id', authenticateToken, async (req, res) => {
+app.delete('/api/products/:productId', authenticateToken, async (req, res) => {
   try {
-    const product = await Product.findByPk(req.params.id, {
-      include: [{ model: Store, as: 'store' }]
-    });
+    const { productId } = req.params;
+    const product = await Product.findByPk(productId);
 
     if (!product) {
       return res.status(404).json({ error: 'Producto no encontrado' });
     }
 
-    if (product.store.ownerId !== req.user.id && req.user.role !== 'admin') {
+    const store = await Store.findByPk(product.storeId);
+    if (store.ownerId !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'No autorizado' });
     }
 
-    // 🔥 Eliminar imagen de Cloudinary si existe
     if (product.image) {
-      console.log('🗑️ Eliminando imagen de Cloudinary...');
       await deleteImage(product.image);
-      console.log('✅ Imagen eliminada');
     }
 
     await product.destroy();
-
-    res.json({ message: 'Producto eliminado' });
+    res.json({ message: 'Producto eliminado exitosamente' });
   } catch (error) {
-    console.error('Error eliminando producto:', error);
     res.status(500).json({ error: 'Error al eliminar producto', details: error.message });
   }
 });
@@ -537,51 +572,62 @@ app.delete('/api/products/:id', authenticateToken, async (req, res) => {
 app.post('/api/orders', authenticateToken, async (req, res) => {
   try {
     if (req.user.role !== 'client') {
-      return res.status(403).json({ error: 'Solo los clientes pueden crear pedidos' });
+      return res.status(403).json({ error: 'Solo clientes pueden crear pedidos' });
     }
 
-    const { storeId, items, deliveryAddress, notes } = req.body;
+    const { storeId, items, deliveryAddress, paymentMethod, notes } = req.body;
 
-    if (!storeId || !items || items.length === 0 || !deliveryAddress) {
-      return res.status(400).json({ error: 'Faltan campos requeridos' });
+    if (!items || items.length === 0) {
+      return res.status(400).json({ error: 'El pedido debe tener al menos un producto' });
     }
 
     const store = await Store.findByPk(storeId);
-    if (!store || !store.isOpen) {
-      return res.status(400).json({ error: 'Tienda no disponible' });
+    if (!store) {
+      return res.status(404).json({ error: 'Tienda no encontrada' });
     }
 
-    const productIds = items.map(item => item.productId);
-    const products = await Product.findAll({
-      where: {
-        id: productIds,
-        storeId: storeId,
-        available: true
-      }
-    });
-
-    if (products.length !== items.length) {
-      return res.status(400).json({ error: 'Algunos productos no están disponibles' });
+    if (!store.isOpen) {
+      return res.status(400).json({ error: 'La tienda está cerrada' });
     }
 
     let subtotal = 0;
-    const orderItems = items.map(item => {
-      const product = products.find(p => p.id === item.productId);
+    const orderItems = [];
+
+    for (const item of items) {
+      const product = await Product.findByPk(item.productId);
+      if (!product) {
+        throw new Error(`Producto ${item.productId} no encontrado`);
+      }
+      if (!product.available) {
+        throw new Error(`Producto ${product.name} no disponible`);
+      }
       const itemTotal = product.price * item.quantity;
       subtotal += itemTotal;
-      
-      return {
+      orderItems.push({
         productId: product.id,
         name: product.name,
         price: product.price,
-        quantity: item.quantity
-      };
-    });
+        quantity: item.quantity,
+        total: itemTotal
+      });
+    }
 
-    const deliveryFee = SERVICE_FEE;
-    const total = subtotal + deliveryFee;
+    if (subtotal < store.minOrder) {
+      return res.status(400).json({ 
+        error: `El pedido mínimo es de $${store.minOrder}`,
+        minOrder: store.minOrder,
+        currentTotal: subtotal
+      });
+    }
 
-    const orderNumber = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const deliveryFee = store.deliveryFee;
+    const total = subtotal + deliveryFee + SERVICE_FEE;
+    const commission = subtotal * COMMISSION_RATE;
+
+    const lastOrder = await Order.findOne({ order: [['orderNumber', 'DESC']] });
+    const orderNumber = lastOrder ? lastOrder.orderNumber + 1 : 1;
+
+    const customer = await User.findByPk(req.user.id);
 
     const newOrder = await Order.create({
       orderNumber,
@@ -590,25 +636,34 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
       items: orderItems,
       subtotal,
       deliveryFee,
+      serviceFee: SERVICE_FEE,
+      commission,
       total,
+      status: ORDER_STATES.PENDING,
       deliveryAddress,
-      notes,
-      status: ORDER_STATES.PENDING
+      paymentMethod,
+      notes: notes || '',
+      distance: 5.2,
+      statusHistory: [
+        {
+          status: ORDER_STATES.PENDING,
+          timestamp: new Date(),
+          note: 'Pedido creado'
+        }
+      ]
     });
 
-    const customer = await User.findByPk(req.user.id);
-
     notifyUser(store.ownerId, {
-      title: '🔔 Nuevo pedido',
-      message: `${customer.name} ha realizado un pedido de ${orderItems.length} productos`,
+      title: '¡Nuevo pedido!',
+      message: `Pedido #${newOrder.orderNumber} - $${total.toFixed(2)}`,
       type: 'success',
       orderId: newOrder.id,
       timestamp: new Date()
     });
 
     notifyRole('admin', {
-      title: '📊 Nuevo pedido en el sistema',
-      message: `Pedido ${orderNumber} - Total: $${total}`,
+      title: 'Nuevo pedido en plataforma',
+      message: `Pedido #${newOrder.orderNumber} en ${store.name}`,
       type: 'info',
       orderId: newOrder.id,
       timestamp: new Date()
@@ -616,64 +671,43 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
 
     res.status(201).json({ 
       message: 'Pedido creado exitosamente',
-      order: {
-        ...newOrder.toJSON(),
-        customer: {
-          id: customer.id,
-          name: customer.name,
-          phone: customer.phone
-        },
-        store: {
-          id: store.id,
-          name: store.name,
-          phone: store.phone
-        }
-      }
+      order: newOrder 
     });
   } catch (error) {
-    console.error('Error creando pedido:', error);
     res.status(500).json({ error: 'Error al crear pedido', details: error.message });
   }
 });
 
 app.get('/api/orders', authenticateToken, async (req, res) => {
   try {
-    let whereClause = {};
+    const { status } = req.query;
+    let where = {};
 
     if (req.user.role === 'client') {
-      whereClause.customerId = req.user.id;
+      where.customerId = req.user.id;
     } else if (req.user.role === 'driver') {
-      whereClause.driverId = req.user.id;
+      where = {
+        [sequelize.Sequelize.Op.or]: [
+          { driverId: req.user.id },
+          { status: ORDER_STATES.READY }
+        ]
+      };
     } else if (req.user.role === 'store_owner') {
       const userStores = await Store.findAll({ where: { ownerId: req.user.id } });
       const storeIds = userStores.map(s => s.id);
-      if (storeIds.length > 0) {
-        whereClause.storeId = storeIds;
-      } else {
-        // Si no tiene tiendas, retornar array vacío
-        return res.json({ orders: [] });
-      }
+      where.storeId = { [sequelize.Sequelize.Op.in]: storeIds };
+    }
+
+    if (status) {
+      where.status = status;
     }
 
     const orders = await Order.findAll({
-      where: whereClause,
+      where,
       include: [
-        {
-          model: User,
-          as: 'customer',
-          attributes: ['id', 'name', 'phone', 'address']
-        },
-        {
-          model: Store,
-          as: 'store',
-          attributes: ['id', 'name', 'direccion', 'phone'] // ✅ CORRECCIÓN APLICADA: 'direccion' (sin tilde)
-        },
-        {
-          model: User,
-          as: 'driver',
-          attributes: ['id', 'name', 'phone', 'vehicle'],
-          required: false
-        }
+        { model: User, as: 'customer', attributes: ['id', 'name', 'phone', 'email'] },
+        { model: User, as: 'driver', attributes: ['id', 'name', 'phone'] },
+        { model: Store, as: 'store', attributes: ['id', 'name', 'location'] }
       ],
       order: [['createdAt', 'DESC']]
     });
@@ -684,31 +718,14 @@ app.get('/api/orders', authenticateToken, async (req, res) => {
   }
 });
 
-app.get('/api/orders/:id', authenticateToken, async (req, res) => {
+app.get('/api/orders/:orderId', authenticateToken, async (req, res) => {
   try {
-    const order = await Order.findByPk(req.params.id, {
+    const { orderId } = req.params;
+    const order = await Order.findByPk(orderId, {
       include: [
-        {
-          model: User,
-          as: 'customer',
-          attributes: ['id', 'name', 'phone', 'address']
-        },
-        {
-          model: Store,
-          as: 'store',
-          attributes: ['id', 'name', 'direccion', 'phone'], // ✅ CORRECCIÓN APLICADA: 'direccion' (sin tilde)
-          include: [{
-            model: User,
-            as: 'owner',
-            attributes: ['id', 'name', 'phone']
-          }]
-        },
-        {
-          model: User,
-          as: 'driver',
-          attributes: ['id', 'name', 'phone', 'vehicle'],
-          required: false
-        }
+        { model: User, as: 'customer', attributes: ['id', 'name', 'phone', 'email', 'address'] },
+        { model: User, as: 'driver', attributes: ['id', 'name', 'phone', 'vehicle', 'currentLocation'] },
+        { model: Store, as: 'store', attributes: ['id', 'name', 'location', 'phone'] }
       ]
     });
 
@@ -716,13 +733,19 @@ app.get('/api/orders/:id', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Pedido no encontrado' });
     }
 
-    const isAuthorized = 
-      order.customerId === req.user.id ||
-      order.driverId === req.user.id ||
-      order.store.ownerId === req.user.id ||
-      req.user.role === 'admin';
+    const userStore = await Store.findOne({ 
+      where: { 
+        ownerId: req.user.id,
+        id: order.storeId 
+      }
+    });
 
-    if (!isAuthorized) {
+    if (
+      req.user.role !== 'admin' &&
+      order.customerId !== req.user.id &&
+      order.driverId !== req.user.id &&
+      !userStore
+    ) {
       return res.status(403).json({ error: 'No autorizado' });
     }
 
@@ -732,14 +755,16 @@ app.get('/api/orders/:id', authenticateToken, async (req, res) => {
   }
 });
 
-app.put('/api/orders/:id/status', authenticateToken, async (req, res) => {
+app.put('/api/orders/:orderId/status', authenticateToken, async (req, res) => {
   try {
-    const { status, driverId } = req.body;
-    const order = await Order.findByPk(req.params.id, {
+    const { orderId } = req.params;
+    const { status, note } = req.body;
+
+    const order = await Order.findByPk(orderId, {
       include: [
-        { model: User, as: 'customer', attributes: ['id', 'name'] },
-        { model: Store, as: 'store', attributes: ['id', 'name', 'ownerId'] },
-        { model: User, as: 'driver', attributes: ['id', 'name'], required: false }
+        { model: User, as: 'customer' },
+        { model: User, as: 'driver' },
+        { model: Store, as: 'store' }
       ]
     });
 
@@ -747,175 +772,204 @@ app.put('/api/orders/:id/status', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Pedido no encontrado' });
     }
 
-    const currentStatePermissions = STATE_PERMISSIONS[order.status];
-    
-    if (!currentStatePermissions.canUpdate.includes(req.user.role)) {
-      return res.status(403).json({ 
-        error: `Solo ${currentStatePermissions.canUpdate.join(', ')} pueden actualizar este estado` 
-      });
+    const currentStateConfig = STATE_PERMISSIONS[order.status];
+    if (!currentStateConfig) {
+      return res.status(400).json({ error: 'Estado actual inválido' });
     }
 
-    if (!currentStatePermissions.nextStates.includes(status)) {
+    if (!currentStateConfig.nextStates.includes(status)) {
       return res.status(400).json({ 
-        error: `Transición inválida de ${order.status} a ${status}` 
+        error: `No se puede cambiar de ${order.status} a ${status}`,
+        allowedStates: currentStateConfig.nextStates
       });
     }
 
-    const updateData = { status };
+    if (!currentStateConfig.canUpdate.includes(req.user.role)) {
+      return res.status(403).json({ 
+        error: `El rol ${req.user.role} no puede actualizar desde ${order.status}`
+      });
+    }
 
-    if (status === ORDER_STATES.ACCEPTED && !order.acceptedAt) {
-      updateData.acceptedAt = new Date();
-    } else if (status === ORDER_STATES.PICKED_UP && driverId) {
-      updateData.driverId = driverId;
-      updateData.pickedUpAt = new Date();
+    const userStore = await Store.findOne({ 
+      where: { 
+        ownerId: req.user.id,
+        id: order.storeId 
+      }
+    });
+
+    if (
+      req.user.role === 'store_owner' && !userStore ||
+      req.user.role === 'driver' && order.driverId !== req.user.id ||
+      req.user.role === 'client' && order.customerId !== req.user.id
+    ) {
+      return res.status(403).json({ error: 'No autorizado para actualizar este pedido' });
+    }
+
+    const updates = { status };
+    const statusHistory = [...order.statusHistory, {
+      status,
+      timestamp: new Date(),
+      note: note || `Actualizado a ${status}`,
+      updatedBy: req.user.id
+    }];
+    updates.statusHistory = statusHistory;
+
+    if (status === ORDER_STATES.ACCEPTED) {
+      updates.acceptedAt = new Date();
+    } else if (status === ORDER_STATES.READY) {
+      updates.readyAt = new Date();
+    } else if (status === ORDER_STATES.PICKED_UP) {
+      updates.pickedUpAt = new Date();
     } else if (status === ORDER_STATES.DELIVERED) {
-      updateData.deliveredAt = new Date();
+      updates.deliveredAt = new Date();
       
-      const commission = order.subtotal * COMMISSION_RATE;
-      const storeEarnings = order.subtotal - commission;
-      const driverEarnings = order.deliveryFee;
-
-      updateData.commission = commission;
-      updateData.storeEarnings = storeEarnings;
-      updateData.driverEarnings = driverEarnings;
-
       if (order.driverId) {
         const driver = await User.findByPk(order.driverId);
+        const driverEarnings = order.deliveryFee * 0.8;
+        const platformEarnings = order.commission + (order.deliveryFee * 0.2);
+        
         await driver.update({
           totalDeliveries: driver.totalDeliveries + 1,
           totalEarnings: driver.totalEarnings + driverEarnings
         });
-      }
-    } else if (status === ORDER_STATES.CANCELLED) {
-      updateData.cancelledAt = new Date();
-    }
 
-    await order.update(updateData);
+        updates.driverEarnings = driverEarnings;
+        updates.platformEarnings = platformEarnings;
 
-    const notifications = {
-      [ORDER_STATES.ACCEPTED]: {
-        customer: { title: '✅ Pedido aceptado', message: `${order.store.name} ha aceptado tu pedido` },
-        driver: { title: '🔔 Pedido disponible', message: `Nuevo pedido en ${order.store.name}` }
-      },
-      [ORDER_STATES.PREPARING]: {
-        customer: { title: '👨‍🍳 Preparando tu pedido', message: `${order.store.name} está preparando tu pedido` }
-      },
-      [ORDER_STATES.READY]: {
-        customer: { title: '✅ Pedido listo', message: 'Tu pedido está listo para ser recogido' },
-        driver: { title: '📦 Pedido listo para recoger', message: `Pedido ${order.orderNumber} en ${order.store.name}` }
-      },
-      [ORDER_STATES.PICKED_UP]: {
-        customer: { title: '🚗 Conductor recogió tu pedido', message: `${order.driver?.name} ha recogido tu pedido` },
-        store_owner: { title: '✅ Pedido recogido', message: `Pedido ${order.orderNumber} recogido por ${order.driver?.name}` }
-      },
-      [ORDER_STATES.ON_WAY]: {
-        customer: { title: '🛵 En camino', message: `${order.driver?.name} está en camino a tu ubicación` }
-      },
-      [ORDER_STATES.DELIVERED]: {
-        customer: { title: '🎉 Pedido entregado', message: 'Gracias por tu compra' },
-        store_owner: { title: '💰 Pedido completado', message: `Ganancia: $${storeEarnings.toFixed(2)}` },
-        driver: { title: '💵 Entrega completada', message: `Ganancia: $${driverEarnings.toFixed(2)}` }
-      },
-      [ORDER_STATES.CANCELLED]: {
-        customer: { title: '❌ Pedido cancelado', message: 'Tu pedido ha sido cancelado' },
-        store_owner: { title: '⚠️ Pedido cancelado', message: `Pedido ${order.orderNumber} cancelado` }
-      }
-    };
-
-    const statusNotifications = notifications[status];
-    if (statusNotifications) {
-      if (statusNotifications.customer) {
-        notifyUser(order.customerId, {
-          ...statusNotifications.customer,
-          type: status === ORDER_STATES.DELIVERED ? 'success' : 'info',
-          orderId: order.id,
-          timestamp: new Date()
-        });
-      }
-      if (statusNotifications.store_owner) {
-        notifyUser(order.store.ownerId, {
-          ...statusNotifications.store_owner,
+        notifyUser(order.driverId, {
+          title: 'Pedido completado',
+          message: `Has ganado $${driverEarnings.toFixed(2)} por el pedido #${order.orderNumber}`,
           type: 'success',
-          orderId: order.id,
           timestamp: new Date()
         });
       }
-      if (statusNotifications.driver) {
-        if (status === ORDER_STATES.ACCEPTED || status === ORDER_STATES.READY) {
-          notifyRole('driver', {
-            ...statusNotifications.driver,
-            type: 'info',
-            orderId: order.id,
-            timestamp: new Date()
-          });
-        } else if (order.driverId) {
-          notifyUser(order.driverId, {
-            ...statusNotifications.driver,
-            type: 'success',
-            orderId: order.id,
-            timestamp: new Date()
-          });
-        }
-      }
+
+      notifyUser(order.customerId, {
+        title: 'Pedido entregado',
+        message: `Tu pedido #${order.orderNumber} ha sido entregado`,
+        type: 'success',
+        timestamp: new Date()
+      });
+
+      notifyUser(order.store.ownerId, {
+        title: 'Pedido completado',
+        message: `Pedido #${order.orderNumber} entregado exitosamente`,
+        type: 'success',
+        timestamp: new Date()
+      });
     }
 
-    const updatedOrder = await Order.findByPk(order.id, {
-      include: [
-        { model: User, as: 'customer', attributes: ['id', 'name', 'phone'] },
-        { model: Store, as: 'store', attributes: ['id', 'name', 'phone'] },
-        { model: User, as: 'driver', attributes: ['id', 'name', 'phone', 'vehicle'], required: false }
-      ]
-    });
+    await order.update(updates);
 
-    res.json({ message: 'Estado actualizado', order: updatedOrder });
+    let notificationMessage = '';
+    if (status === ORDER_STATES.ACCEPTED) {
+      notificationMessage = `Tu pedido #${order.orderNumber} ha sido aceptado`;
+      notifyUser(order.customerId, {
+        title: 'Pedido aceptado',
+        message: notificationMessage,
+        type: 'success',
+        orderId: order.id,
+        timestamp: new Date()
+      });
+    } else if (status === ORDER_STATES.READY) {
+      notificationMessage = `Pedido #${order.orderNumber} listo para recoger en ${order.store.name}`;
+      notifyRole('driver', {
+        title: 'Nuevo pedido disponible',
+        message: notificationMessage,
+        type: 'info',
+        orderId: order.id,
+        timestamp: new Date()
+      });
+    }
+
+    res.json({ 
+      message: 'Estado actualizado exitosamente',
+      order 
+    });
   } catch (error) {
     console.error('Error actualizando estado:', error);
-    res.status(500).json({ error: 'Error al actualizar estado del pedido', details: error.message });
+    res.status(500).json({ error: 'Error al actualizar estado', details: error.message });
   }
 });
 
-app.get('/api/orders/available/drivers', authenticateToken, async (req, res) => {
+app.put('/api/orders/:orderId/assign', authenticateToken, async (req, res) => {
   try {
     if (req.user.role !== 'driver') {
-      return res.status(403).json({ error: 'Solo los conductores pueden ver pedidos disponibles' });
+      return res.status(403).json({ error: 'Solo conductores pueden asignarse pedidos' });
     }
 
-    const availableOrders = await Order.findAll({
-      where: {
-        status: [ORDER_STATES.READY],
-        driverId: null
-      },
+    const { orderId } = req.params;
+    const order = await Order.findByPk(orderId, {
       include: [
-        {
-          model: Store,
-          as: 'store',
-          attributes: ['id', 'name', 'address', 'phone']
-        },
-        {
-          model: User,
-          as: 'customer',
-          attributes: ['id', 'name', 'address']
-        }
-      ],
-      order: [['createdAt', 'ASC']]
+        { model: Store, as: 'store' },
+        { model: User, as: 'customer' }
+      ]
     });
 
-    res.json({ orders: availableOrders });
+    if (!order) {
+      return res.status(404).json({ error: 'Pedido no encontrado' });
+    }
+
+    if (order.status !== ORDER_STATES.READY) {
+      return res.status(400).json({ 
+        error: 'Solo se pueden asignar pedidos en estado "ready"' 
+      });
+    }
+
+    if (order.driverId) {
+      return res.status(400).json({ error: 'Este pedido ya tiene un conductor asignado' });
+    }
+
+    const driver = await User.findByPk(req.user.id);
+    if (!driver.available) {
+      return res.status(400).json({ error: 'Debes estar disponible para tomar pedidos' });
+    }
+
+    await order.update({
+      driverId: req.user.id,
+      assignedAt: new Date(),
+      statusHistory: [...order.statusHistory, {
+        status: 'assigned_to_driver',
+        timestamp: new Date(),
+        note: `Asignado al conductor ${driver.name}`,
+        driverId: driver.id
+      }]
+    });
+
+    notifyUser(order.customerId, {
+      title: 'Conductor asignado',
+      message: `${driver.name} recogerá tu pedido`,
+      type: 'info',
+      orderId: order.id,
+      timestamp: new Date()
+    });
+
+    notifyUser(order.store.ownerId, {
+      title: 'Conductor asignado',
+      message: `${driver.name} recogerá el pedido #${order.orderNumber}`,
+      type: 'info',
+      orderId: order.id,
+      timestamp: new Date()
+    });
+
+    res.json({ 
+      message: 'Pedido asignado exitosamente',
+      order 
+    });
   } catch (error) {
-    res.status(500).json({ error: 'Error al obtener pedidos disponibles', details: error.message });
+    res.status(500).json({ error: 'Error al asignar pedido', details: error.message });
   }
 });
 
 app.get('/api/drivers', authenticateToken, async (req, res) => {
   try {
     if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Solo los administradores pueden ver conductores' });
+      return res.status(403).json({ error: 'No autorizado' });
     }
 
     const drivers = await User.findAll({
       where: { role: 'driver' },
-      attributes: { exclude: ['password'] },
-      order: [['createdAt', 'DESC']]
+      attributes: { exclude: ['password'] }
     });
 
     res.json({ drivers });
@@ -924,71 +978,92 @@ app.get('/api/drivers', authenticateToken, async (req, res) => {
   }
 });
 
-app.put('/api/drivers/:id/toggle-availability', authenticateToken, async (req, res) => {
+app.get('/api/drivers/available', async (req, res) => {
   try {
-    if (req.user.role !== 'driver' || req.user.id !== parseInt(req.params.id)) {
-      return res.status(403).json({ error: 'No autorizado' });
+    const drivers = await User.findAll({
+      where: { 
+        role: 'driver',
+        available: true,
+        approved: true
+      },
+      attributes: ['id', 'name', 'currentLocation', 'rating']
+    });
+
+    res.json({ drivers });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener conductores', details: error.message });
+  }
+});
+
+app.put('/api/drivers/availability', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'driver') {
+      return res.status(403).json({ error: 'Solo conductores pueden cambiar disponibilidad' });
     }
 
-    const driver = await User.findByPk(req.params.id);
-    
-    if (!driver || driver.role !== 'driver') {
-      return res.status(404).json({ error: 'Conductor no encontrado' });
+    const { available } = req.body;
+    const driver = await User.findByPk(req.user.id);
+
+    if (!driver.approved) {
+      return res.status(403).json({ error: 'Tu cuenta debe ser aprobada primero' });
     }
 
-    await driver.update({ available: !driver.available });
-
-    const userResponse = driver.toJSON();
-    delete userResponse.password;
+    await driver.update({ available });
 
     res.json({ 
-      message: `Ahora estás ${driver.available ? 'disponible' : 'no disponible'}`,
-      driver: userResponse
+      message: `Disponibilidad actualizada a ${available ? 'disponible' : 'no disponible'}`,
+      available: driver.available
     });
   } catch (error) {
     res.status(500).json({ error: 'Error al actualizar disponibilidad', details: error.message });
   }
 });
 
-app.put('/api/drivers/:id/approve', authenticateToken, async (req, res) => {
+app.put('/api/drivers/:driverId/approve', authenticateToken, async (req, res) => {
   try {
     if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Solo los administradores pueden aprobar conductores' });
+      return res.status(403).json({ error: 'No autorizado' });
     }
 
-    const driver = await User.findByPk(req.params.id);
-    
-    if (!driver || driver.role !== 'driver') {
+    const { driverId } = req.params;
+    const driver = await User.findByPk(driverId);
+
+    if (!driver) {
       return res.status(404).json({ error: 'Conductor no encontrado' });
+    }
+
+    if (driver.role !== 'driver') {
+      return res.status(400).json({ error: 'El usuario no es un conductor' });
     }
 
     await driver.update({ approved: true });
 
     notifyUser(driver.id, {
-      title: '✅ Cuenta aprobada',
+      title: 'Cuenta aprobada',
       message: 'Tu cuenta de conductor ha sido aprobada. Ya puedes comenzar a trabajar.',
       type: 'success',
       timestamp: new Date()
     });
 
-    const userResponse = driver.toJSON();
-    delete userResponse.password;
-
-    res.json({ message: 'Conductor aprobado', driver: userResponse });
+    res.json({ 
+      message: 'Conductor aprobado exitosamente',
+      driver
+    });
   } catch (error) {
     res.status(500).json({ error: 'Error al aprobar conductor', details: error.message });
   }
 });
 
-app.delete('/api/drivers/:id/reject', authenticateToken, async (req, res) => {
+app.delete('/api/drivers/:driverId', authenticateToken, async (req, res) => {
   try {
     if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Solo los administradores pueden rechazar conductores' });
+      return res.status(403).json({ error: 'No autorizado' });
     }
 
-    const driver = await User.findByPk(req.params.id);
-    
-    if (!driver || driver.role !== 'driver') {
+    const { driverId } = req.params;
+    const driver = await User.findByPk(driverId);
+
+    if (!driver) {
       return res.status(404).json({ error: 'Conductor no encontrado' });
     }
 
@@ -1044,22 +1119,9 @@ app.get('/api/stats', authenticateToken, async (req, res) => {
     } else if (userRole === 'store_owner') {
       const userStores = await Store.findAll({ where: { ownerId: userId } });
       const storeIds = userStores.map(s => s.id);
-      
-      // ✅ Solución para el error 'no encuentra PEDIDO'
-      if (storeIds.length === 0) {
-        return res.json({ stats: {
-          totalStores: 0,
-          totalProducts: 0,
-          totalOrders: 0,
-          totalRevenue: 0,
-          activeOrders: 0,
-          ordersToday: 0
-        }});
-      }
-      
       const storeOrders = await Order.findAll({ 
         where: { 
-          storeId: { [sequelize.Sequelize.Op.in]: storeIds }
+          storeId: { [sequelize.Sequelize.Op.in]: storeIds } 
         } 
       });
       const completedOrders = storeOrders.filter(o => o.status === 'delivered');
@@ -1214,8 +1276,8 @@ async function startServer() {
       console.log(`🗄️  Base de datos: PostgreSQL ✅`);
       console.log(`📡 WebSocket: Habilitado`);
       console.log(`🔔 Notificaciones: Activas`);
+      console.log(`☁️  Cloudinary: Configurado`);
       console.log(`🛡️  Seguridad: Helmet ✅ | Rate Limiting ✅ | Bcrypt ✅`);
-      console.log(`☁️  Cloudinary: Activado para imágenes`);
       console.log(`💰 Comisión: ${COMMISSION_RATE * 100}% | Fee de servicio: ${SERVICE_FEE}`);
       console.log(`\n📋 FLUJO DE ESTADOS DE PEDIDOS:`);
       console.log(`   1. PENDING    → Cliente crea pedido`);

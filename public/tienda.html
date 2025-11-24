@@ -25,16 +25,21 @@
             window.location.href = '/';
         }
 
-        async function apiCall(endpoint, method = 'GET', body = null) {
+        async function apiCall(endpoint, method = 'GET', body = null, isFormData = false) {
             const options = {
                 method,
                 headers: {
-                    'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
-                },
-                // Si el body es un objeto, lo convierte a JSON
-                ...(body && { body: JSON.stringify(body) })
+                }
             };
+
+            if (!isFormData) {
+                options.headers['Content-Type'] = 'application/json';
+            }
+
+            if (body) {
+                options.body = isFormData ? body : JSON.stringify(body);
+            }
 
             try {
                 const response = await fetch(`${API_URL}${endpoint}`, options);
@@ -50,7 +55,7 @@
                 throw error;
             }
         }
-        
+
         async function loadData() {
             try {
                 const storesData = await apiCall('/stores');
@@ -77,68 +82,35 @@
             }
         }
 
-        // ✅ CORRECCIÓN FINAL: Función para CREAR TIENDA (Eliminada la referencia a selectedStore.id)
         async function createStore(event) {
-            event.preventDefault();
-            const form = document.getElementById('createStoreForm');
-            const formData = new FormData(form); 
-
-            try {
-                const response = await fetch(`${API_URL}/stores`, {
-                    method: 'POST',
-                    headers: {
-                        // ⚠️ IMPORTANTE: NO se incluye 'Content-Type' para FormData
-                        'Authorization': `Bearer ${token}`
-                    },
-                    body: formData // Envía el formulario con el archivo 'logo'
-                });
-
-                const data = await response.json();
-
-                if (response.ok) {
-                    alert('Tienda creada exitosamente! Se recargará el panel.');
-                    currentView = 'dashboard'; 
-                    await loadData(); // Recargar datos para mostrar la tienda
-                } else {
-                    alert(`Error al crear tienda: ${data.error || 'Mensaje desconocido'}`);
-                    console.error('Error del servidor:', data);
-                }
-            } catch (error) {
-                console.error('Error de conexión:', error);
-                alert('Error de conexión con el servidor. Inténtalo de nuevo.');
-            }
-        }
-
-        // ✅ Función para CREAR PRODUCTO (maneja FormData y archivo)
-        async function createProduct(event) {
             event.preventDefault();
             const form = event.target;
             const formData = new FormData(form);
             
-            // Añadir el storeId al FormData (necesario para el backend)
-            // Esto solo se llama cuando ya hay un selectedStore (Línea 493)
-            formData.append('storeId', selectedStore.id);
-
             try {
-                const response = await fetch(`${API_URL}/products`, {
-                    method: 'POST',
-                    headers: {
-                        // ⚠️ IMPORTANTE: NO se incluye 'Content-Type'
-                        'Authorization': `Bearer ${token}`
-                    },
-                    body: formData // Envía el formulario con el archivo 'image'
-                });
+                await apiCall('/stores', 'POST', formData, true);
+                alert('Tienda creada exitosamente');
+                form.reset();
+                await loadData();
+                currentView = 'dashboard';
+                render();
+            } catch (error) {
+                console.error('Error creando tienda:', error);
+            }
+        }
 
-                const data = await response.json();
-
-                if (response.ok) {
-                    alert('Producto creado exitosamente');
-                    form.reset();
-                    loadData();
-                } else {
-                     alert(`Error al crear producto: ${data.error || 'Mensaje desconocido'}`);
-                    console.error('Error del servidor:', data);
-                }
+        async function createProduct(event) {
+            event.preventDefault();
+            const form = event.target;
+            const formData = new FormData(form);
+            formData.append('storeId', selectedStore.id);
+            
+            try {
+                await apiCall('/products', 'POST', formData, true);
+                alert('Producto creado exitosamente');
+                form.reset();
+                document.getElementById('productImagePreview').style.display = 'none';
+                loadData();
             } catch (error) {
                 console.error('Error creando producto:', error);
             }
@@ -146,9 +118,10 @@
 
         async function toggleProductAvailability(productId, currentStatus) {
             try {
-                await apiCall(`/products/${productId}`, 'PUT', {
-                    available: !currentStatus
-                });
+                const formData = new FormData();
+                formData.append('available', !currentStatus);
+                
+                await apiCall(`/products/${productId}`, 'PUT', formData, true);
                 loadData();
             } catch (error) {
                 console.error('Error actualizando producto:', error);
@@ -156,7 +129,7 @@
         }
 
         async function deleteProduct(productId) {
-            if (!confirm('¿Eliminar este producto.?')) return;
+            if (!confirm('¿Eliminar este producto?')) return;
             
             try {
                 await apiCall(`/products/${productId}`, 'DELETE');
@@ -171,13 +144,27 @@
             if (!selectedStore) return;
             
             try {
-                await apiCall(`/stores/${selectedStore.id}`, 'PUT', {
-                    isOpen: !selectedStore.isOpen
-                });
+                const formData = new FormData();
+                formData.append('isOpen', !selectedStore.isOpen);
+                
+                await apiCall(`/stores/${selectedStore.id}`, 'PUT', formData, true);
                 alert(`Tienda ${selectedStore.isOpen ? 'cerrada' : 'abierta'}`);
                 loadData();
             } catch (error) {
                 console.error('Error actualizando tienda:', error);
+            }
+        }
+
+        function previewImage(event, previewId) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const preview = document.getElementById(previewId);
+                    preview.src = e.target.result;
+                    preview.style.display = 'block';
+                }
+                reader.readAsDataURL(file);
             }
         }
 
@@ -261,59 +248,12 @@
             return actions[status];
         }
 
-        // Función: Formulario para crear la tienda (Se llama desde render())
-        function renderCreateStore() {
-            return `
-                <div class="bg-white rounded-xl shadow-lg p-12 text-center max-w-lg mx-auto mt-12">
-                    <h3 class="text-2xl font-bold text-gray-800 mb-4">¡Bienvenido! Crea tu primera tienda 🏪</h3>
-                    <p class="text-gray-600 mb-6">Para empezar a vender, registra tu tienda y sube tu logo.</p>
-                    
-                    <form id="createStoreForm" onsubmit="createStore(event)" class="space-y-4 text-left">
-                        <div>
-                            <label for="name" class="block text-sm font-medium text-gray-700 mb-1">Nombre de la Tienda *</label>
-                            <input type="text" id="name" name="name" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" required>
-                        </div>
-                        <div>
-                            <label for="description" class="block text-sm font-medium text-gray-700 mb-1">Descripción</label>
-                            <textarea id="description" name="description" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" rows="2"></textarea>
-                        </div>
-                        <div>
-                            <label for="address" class="block text-sm font-medium text-gray-700 mb-1">Dirección *</label>
-                            <input type="text" id="address" name="address" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" required>
-                        </div>
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <label for="phone" class="block text-sm font-medium text-gray-700 mb-1">Teléfono *</label>
-                                <input type="tel" id="phone" name="phone" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" required>
-                            </div>
-                            <div>
-                                <label for="category" class="block text-sm font-medium text-gray-700 mb-1">Categoría *</label>
-                                <input type="text" id="category" name="category" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" required>
-                            </div>
-                        </div>
-                        <div class="col-span-full">
-                            <label for="logo" class="block text-sm font-medium text-gray-700 mb-1">Logo de la tienda (JPG/PNG) *</label>
-                            <input type="file" id="logo" name="logo" accept="image/*" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" required>
-                        </div>
-                        
-                        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition">
-                            Registrar Tienda
-                        </button>
-                    </form>
-                </div>
-            `;
-        }
-
         function render() {
             const root = document.getElementById('root');
             
-            // Si el usuario no tiene tiendas, le mostramos el formulario de creación de tienda
-            if (myStores.length === 0) {
-                return root.innerHTML = renderCreateStore();
-            }
-
             root.innerHTML = `
                 <div class="container mx-auto px-4 py-6">
+                    <!-- Header -->
                     <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
                         <div class="flex justify-between items-center">
                             <div class="flex items-center gap-3">
@@ -340,12 +280,19 @@
                             </div>
                         </div>
                         
+                        <!-- Navegación -->
                         <div class="flex gap-2 mt-4">
                             <button 
                                 onclick="currentView = 'dashboard'; render();"
                                 class="px-4 py-2 rounded-lg font-semibold transition ${currentView === 'dashboard' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}"
                             >
                                 📊 Dashboard
+                            </button>
+                            <button 
+                                onclick="currentView = 'stores'; render();"
+                                class="px-4 py-2 rounded-lg font-semibold transition ${currentView === 'stores' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}"
+                            >
+                                🏪 Tiendas
                             </button>
                             <button 
                                 onclick="currentView = 'products'; render();"
@@ -362,7 +309,9 @@
                         </div>
                     </div>
 
+                    <!-- Contenido -->
                     ${currentView === 'dashboard' ? renderDashboard() : ''}
+                    ${currentView === 'stores' ? renderStores() : ''}
                     ${currentView === 'products' ? renderProducts() : ''}
                     ${currentView === 'orders' ? renderOrders() : ''}
                 </div>
@@ -393,6 +342,7 @@
                 </div>
 
                 <div class="grid md:grid-cols-2 gap-6">
+                    <!-- Mis tiendas -->
                     <div class="bg-white rounded-xl shadow-lg p-6">
                         <h3 class="text-xl font-bold text-gray-800 mb-4">🏪 Mis Tiendas</h3>
                         <div class="space-y-3">
@@ -411,11 +361,18 @@
                                         <span>⭐ ${store.rating}</span>
                                         <span>🕐 ${store.deliveryTime}</span>
                                     </div>
+                                    <button 
+                                        onclick="selectedStore = ${JSON.stringify(store).replace(/"/g, '&quot;')}; currentView = 'products'; render();"
+                                        class="mt-2 w-full bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-sm transition"
+                                    >
+                                        Ver Productos
+                                    </button>
                                 </div>
                             `).join('')}
                         </div>
                     </div>
 
+                    <!-- Pedidos activos -->
                     <div class="bg-white rounded-xl shadow-lg p-6">
                         <h3 class="text-xl font-bold text-gray-800 mb-4">📦 Pedidos Activos (${stats.activeOrders})</h3>
                         <div class="space-y-3 max-h-96 overflow-y-auto">
@@ -442,16 +399,200 @@
             `;
         }
 
+        function renderStores() {
+            return `
+                <div class="grid md:grid-cols-2 gap-6">
+                    <!-- Formulario de tienda -->
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <h3 class="text-xl font-bold text-gray-800 mb-4">➕ Crear Nueva Tienda</h3>
+                        
+                        <form onsubmit="createStore(event)" class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Imagen de la tienda</label>
+                                <input 
+                                    type="file" 
+                                    name="image"
+                                    accept="image/*"
+                                    onchange="previewImage(event, 'storeImagePreview')"
+                                    class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                />
+                                <img id="storeImagePreview" class="mt-2 w-full h-48 object-cover rounded-lg" style="display:none" />
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Nombre *</label>
+                                <input 
+                                    type="text" 
+                                    name="name"
+                                    placeholder="Ej: Tacos El Güero"
+                                    class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                    required
+                                />
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Descripción</label>
+                                <textarea 
+                                    name="description"
+                                    placeholder="Descripción de tu tienda..."
+                                    class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                    rows="3"
+                                ></textarea>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Categoría *</label>
+                                    <select 
+                                        name="category"
+                                        class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                        required
+                                    >
+                                        <option value="">Selecciona...</option>
+                                        <option value="Comida Rápida">Comida Rápida</option>
+                                        <option value="Restaurante">Restaurante</option>
+                                        <option value="Cafetería">Cafetería</option>
+                                        <option value="Postres">Postres</option>
+                                        <option value="Tacos">Tacos</option>
+                                        <option value="Pizza">Pizza</option>
+                                        <option value="Sushi">Sushi</option>
+                                        <option value="Otro">Otro</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Tiempo de entrega</label>
+                                    <input 
+                                        type="text" 
+                                        name="deliveryTime"
+                                        placeholder="30-40 min"
+                                        class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                        value="30-40 min"
+                                    />
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Costo de envío *</label>
+                                    <input 
+                                        type="number" 
+                                        name="deliveryFee"
+                                        placeholder="0.00"
+                                        min="0"
+                                        step="0.01"
+                                        class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                        required
+                                    />
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Pedido mínimo *</label>
+                                    <input 
+                                        type="number" 
+                                        name="minOrder"
+                                        placeholder="0.00"
+                                        min="0"
+                                        step="0.01"
+                                        class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                        required
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Dirección *</label>
+                                <input 
+                                    type="text" 
+                                    name="address"
+                                    placeholder="Calle, Número, Colonia"
+                                    class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                    required
+                                />
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Latitud *</label>
+                                    <input 
+                                        type="number" 
+                                        name="lat"
+                                        placeholder="19.4326"
+                                        step="0.000001"
+                                        class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                        required
+                                    />
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Longitud *</label>
+                                    <input 
+                                        type="number" 
+                                        name="lng"
+                                        placeholder="-99.1332"
+                                        step="0.000001"
+                                        class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                        required
+                                    />
+                                </div>
+                            </div>
+
+                            <button 
+                                type="submit" 
+                                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition"
+                            >
+                                Crear Tienda
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- Lista de tiendas -->
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <h3 class="text-xl font-bold text-gray-800 mb-4">📋 Mis Tiendas (${myStores.length})</h3>
+                        
+                        <div class="space-y-3 max-h-[600px] overflow-y-auto">
+                            ${myStores.map(store => `
+                                <div class="border rounded-lg p-4">
+                                    ${store.image ? `
+                                        <img src="${store.image}" alt="${store.name}" class="w-full h-32 object-cover rounded-lg mb-3" />
+                                    ` : ''}
+                                    <div class="flex justify-between items-start mb-2">
+                                        <div class="flex-1">
+                                            <div class="font-bold text-gray-800">${store.name}</div>
+                                            <div class="text-sm text-gray-600">${store.description || ''}</div>
+                                            <div class="text-sm text-gray-500 mt-1">${store.category}</div>
+                                        </div>
+                                        <span class="px-2 py-1 rounded text-xs ${store.isOpen ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">
+                                            ${store.isOpen ? 'Abierta' : 'Cerrada'}
+                                        </span>
+                                    </div>
+                                    <div class="text-sm text-gray-600 mb-2">
+                                        <div>💰 Envío: ${formatCurrency(store.deliveryFee)} | Mínimo: ${formatCurrency(store.minOrder)}</div>
+                                        <div>⏱️ ${store.deliveryTime}</div>
+                                    </div>
+                                    <button 
+                                        onclick="selectedStore = ${JSON.stringify(store).replace(/"/g, '&quot;')}; currentView = 'products'; render();"
+                                        class="w-full bg-blue-500 hover:bg-blue-600 text-white px-3 py-2 rounded text-sm font-semibold transition"
+                                    >
+                                        Ver Productos
+                                    </button>
+                                </div>
+                            `).join('')}
+                            
+                            ${myStores.length === 0 ? '<p class="text-gray-500 text-center py-8">No hay tiendas aún. Crea tu primera tienda.</p>' : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
         function renderProducts() {
-            // Si no hay tienda seleccionada (el usuario aún no ha creado una)
             if (!selectedStore) {
                 return `
                     <div class="bg-white rounded-xl shadow-lg p-12 text-center">
-                        <p class="text-gray-600 mb-4">Primero debes crear una tienda para poder agregar productos</p>
+                        <p class="text-gray-600 mb-4">Primero debes crear o seleccionar una tienda</p>
                         <button 
-                            onclick="currentView = 'create_store'; render();"
-                            class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition">
-                            Crear Tienda
+                            onclick="currentView = 'stores'; render();"
+                            class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition"
+                        >
+                            Ir a Tiendas
                         </button>
                     </div>
                 `;
@@ -459,10 +600,23 @@
 
             return `
                 <div class="grid md:grid-cols-2 gap-6">
+                    <!-- Formulario de producto -->
                     <div class="bg-white rounded-xl shadow-lg p-6">
-                        <h3 class="text-xl font-bold text-gray-800 mb-4">➕ Agregar Producto</h3>
+                        <h3 class="text-xl font-bold text-gray-800 mb-4">➕ Agregar Producto a ${selectedStore.name}</h3>
                         
                         <form onsubmit="createProduct(event)" class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Imagen del producto</label>
+                                <input 
+                                    type="file" 
+                                    name="image"
+                                    accept="image/*"
+                                    onchange="previewImage(event, 'productImagePreview')"
+                                    class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                />
+                                <img id="productImagePreview" class="mt-2 w-full h-48 object-cover rounded-lg" style="display:none" />
+                            </div>
+
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 mb-2">Nombre *</label>
                                 <input 
@@ -510,30 +664,36 @@
                             </div>
 
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-2">Imagen del producto</label>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Tiempo de preparación (minutos)</label>
                                 <input 
-                                    type="file" 
-                                    name="image"
-                                    accept="image/*"
+                                    type="number" 
+                                    name="preparationTime"
+                                    placeholder="15"
+                                    min="1"
                                     class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                    value="15"
                                 />
                             </div>
 
                             <button 
                                 type="submit" 
-                                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition col-span-2"
+                                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition"
                             >
                                 Crear Producto
                             </button>
                         </form>
                     </div>
 
+                    <!-- Lista de productos -->
                     <div class="bg-white rounded-xl shadow-lg p-6">
                         <h3 class="text-xl font-bold text-gray-800 mb-4">📋 Productos (${myProducts.length})</h3>
                         
                         <div class="space-y-3 max-h-[600px] overflow-y-auto">
                             ${myProducts.map(product => `
                                 <div class="border rounded-lg p-4">
+                                    ${product.image ? `
+                                        <img src="${product.image}" alt="${product.name}" class="w-full h-32 object-cover rounded-lg mb-3" />
+                                    ` : ''}
                                     <div class="flex justify-between items-start mb-2">
                                         <div class="flex-1">
                                             <div class="font-bold text-gray-800">${product.name}</div>
