@@ -24,6 +24,7 @@
         let myOrders = [];
         let currentView = 'stores'; // 'stores', 'products', 'cart', 'orders'
         let selectedCategory = 'all';
+        let searchQuery = '';
 
         if (!token) {
             window.location.href = '/';
@@ -181,6 +182,51 @@
             window.location.href = '/';
         }
 
+        function handleSearch(event) {
+            searchQuery = event.target.value.toLowerCase();
+            render();
+        }
+
+        function filterStores() {
+            if (!searchQuery) return stores;
+            
+            return stores.filter(store => 
+                store.name.toLowerCase().includes(searchQuery) ||
+                store.description?.toLowerCase().includes(searchQuery) ||
+                store.category.toLowerCase().includes(searchQuery)
+            );
+        }
+
+        function filterProducts() {
+            if (!searchQuery) return products;
+            
+            return products.filter(product =>
+                product.name.toLowerCase().includes(searchQuery) ||
+                product.description?.toLowerCase().includes(searchQuery) ||
+                product.category.toLowerCase().includes(searchQuery)
+            );
+        }
+
+        async function cleanOldImages() {
+            if (!confirm('¿Eliminar todas las imágenes antiguas (rutas /uploads/)?\n\nEsto NO borra las tiendas ni productos, solo limpia las referencias a imágenes locales.')) {
+                return;
+            }
+
+            try {
+                const data = await apiCall('/admin/clean-images', 'POST');
+                alert(`✅ Limpieza completada!\n\nTiendas actualizadas: ${data.storesUpdated}\nProductos actualizados: ${data.productsUpdated}`);
+                
+                // Recargar datos
+                await loadStores();
+                if (selectedStore) {
+                    await loadStoreProducts(selectedStore.id);
+                }
+            } catch (error) {
+                console.error('Error limpiando imágenes:', error);
+                alert('❌ Error al limpiar imágenes. Verifica que seas admin.');
+            }
+        }
+
         function formatCurrency(amount) {
             return new Intl.NumberFormat('es-MX', {
                 style: 'currency',
@@ -234,6 +280,16 @@
                             
                             <!-- Carrito -->
                             <div class="flex items-center gap-4">
+                                ${user.role === 'admin' ? `
+                                    <button 
+                                        onclick="cleanOldImages()"
+                                        class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition text-sm"
+                                        title="Limpiar imágenes antiguas"
+                                    >
+                                        🧹 Limpiar
+                                    </button>
+                                ` : ''}
+                                
                                 <button 
                                     onclick="currentView = 'cart'; render();"
                                     class="relative bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition flex items-center gap-2"
@@ -255,7 +311,7 @@
                         <!-- Navegación -->
                         <div class="flex gap-2 mt-4">
                             <button 
-                                onclick="currentView = 'stores'; selectedStore = null; render();"
+                                onclick="currentView = 'stores'; selectedStore = null; searchQuery = ''; render();"
                                 class="px-4 py-2 rounded-lg font-semibold transition ${currentView === 'stores' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}"
                             >
                                 🏪 Tiendas
@@ -267,6 +323,32 @@
                                 📦 Mis Pedidos
                             </button>
                         </div>
+
+                        <!-- Buscador -->
+                        ${currentView === 'stores' || currentView === 'products' ? `
+                            <div class="mt-4">
+                                <div class="relative">
+                                    <input 
+                                        type="text" 
+                                        placeholder="🔍 Buscar ${currentView === 'stores' ? 'tiendas' : 'productos'}..."
+                                        value="${searchQuery}"
+                                        oninput="handleSearch(event)"
+                                        class="w-full px-4 py-3 pl-10 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none transition"
+                                    />
+                                    <div class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-xl">
+                                        🔍
+                                    </div>
+                                    ${searchQuery ? `
+                                        <button 
+                                            onclick="searchQuery = ''; render();"
+                                            class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xl"
+                                        >
+                                            ✕
+                                        </button>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        ` : ''}
                     </div>
                 </div>
 
@@ -281,11 +363,32 @@
         }
 
         function renderStores() {
+            const filteredStores = filterStores();
+            
             return `
                 <div class="mb-6">
-                    <h2 class="text-3xl font-bold text-gray-800 mb-4">Tiendas Disponibles</h2>
-                    <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        ${stores.map(store => `
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-3xl font-bold text-gray-800">
+                            Tiendas Disponibles 
+                            ${searchQuery ? `<span class="text-blue-600">(${filteredStores.length})</span>` : ''}
+                        </h2>
+                    </div>
+
+                    ${filteredStores.length === 0 ? `
+                        <div class="bg-white rounded-xl shadow-lg p-12 text-center">
+                            <div class="text-6xl mb-4">🔍</div>
+                            <p class="text-gray-600 text-lg mb-2">No se encontraron tiendas</p>
+                            <p class="text-gray-500">Intenta con otro término de búsqueda</p>
+                            <button 
+                                onclick="searchQuery = ''; render();"
+                                class="mt-4 bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition"
+                            >
+                                Ver todas las tiendas
+                            </button>
+                        </div>
+                    ` : `
+                        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            ${filteredStores.map(store => `
                             <div 
                                 onclick="loadStoreProducts(${store.id})"
                                 class="bg-white rounded-xl shadow-lg overflow-hidden cursor-pointer hover:shadow-xl transition transform hover:-translate-y-1"
@@ -330,6 +433,7 @@
                             </div>
                         `).join('')}
                     </div>
+                    `}
                 </div>
             `;
         }
@@ -338,9 +442,19 @@
             if (!selectedStore) return '';
             
             const categories = [...new Set(products.map(p => p.category))];
-            const filteredProducts = selectedCategory === 'all' 
+            
+            // Aplicar filtros de categoría Y búsqueda
+            let filteredProducts = selectedCategory === 'all' 
                 ? products 
                 : products.filter(p => p.category === selectedCategory);
+            
+            filteredProducts = searchQuery 
+                ? filteredProducts.filter(p =>
+                    p.name.toLowerCase().includes(searchQuery) ||
+                    p.description?.toLowerCase().includes(searchQuery) ||
+                    p.category.toLowerCase().includes(searchQuery)
+                  )
+                : filteredProducts;
             
             return `
                 <div class="mb-4">
@@ -390,8 +504,23 @@
                     </div>
                     
                     <!-- Productos -->
-                    <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        ${filteredProducts.map(product => `
+                    ${filteredProducts.length === 0 ? `
+                        <div class="bg-white rounded-xl shadow-lg p-12 text-center">
+                            <div class="text-6xl mb-4">🔍</div>
+                            <p class="text-gray-600 text-lg mb-2">No se encontraron productos</p>
+                            <p class="text-gray-500 mb-4">Intenta con otro término de búsqueda${selectedCategory !== 'all' ? ' o cambia de categoría' : ''}</p>
+                            ${searchQuery || selectedCategory !== 'all' ? `
+                                <button 
+                                    onclick="searchQuery = ''; selectedCategory = 'all'; render();"
+                                    class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition"
+                                >
+                                    Ver todos los productos
+                                </button>
+                            ` : ''}
+                        </div>
+                    ` : `
+                        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            ${filteredProducts.map(product => `
                             <div class="bg-white rounded-xl shadow-lg overflow-hidden">
                                 ${product.image ? `
                                     <img 
@@ -422,6 +551,7 @@
                             </div>
                         `).join('')}
                     </div>
+                    `}
                 </div>
             `;
         }

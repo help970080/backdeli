@@ -1211,7 +1211,60 @@ app.get('/tienda', (req, res) => {
 app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
+// ============================================
+// ENDPOINT DE LIMPIEZA DE IMÁGENES ANTIGUAS
+// ============================================
+app.post('/api/admin/clean-images', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Solo administradores pueden ejecutar esta acción' });
+    }
 
+    console.log('🧹 Iniciando limpieza de imágenes antiguas...');
+
+    // Limpiar tiendas con rutas locales
+    const storesUpdated = await Store.update(
+      { image: null },
+      {
+        where: {
+          image: {
+            [sequelize.Sequelize.Op.like]: '/uploads/%'
+          }
+        }
+      }
+    );
+
+    // Limpiar productos con rutas locales
+    const productsUpdated = await Product.update(
+      { image: null },
+      {
+        where: {
+          image: {
+            [sequelize.Sequelize.Op.like]: '/uploads/%'
+          }
+        }
+      }
+    );
+
+    const result = {
+      success: true,
+      message: 'Imágenes antiguas limpiadas exitosamente',
+      storesUpdated: storesUpdated[0],
+      productsUpdated: productsUpdated[0],
+      timestamp: new Date()
+    };
+
+    console.log('✅ Limpieza completada:', result);
+
+    res.json(result);
+  } catch (error) {
+    console.error('❌ Error en limpieza:', error);
+    res.status(500).json({ 
+      error: 'Error al limpiar imágenes', 
+      details: error.message 
+    });
+  }
+});
 app.get('/health', async (req, res) => {
   try {
     const dbStatus = await testConnection();
