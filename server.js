@@ -645,10 +645,15 @@ app.get('/api/orders', authenticateToken, async (req, res) => {
     } else if (req.user.role === 'driver') {
       whereClause.driverId = req.user.id;
     } else if (req.user.role === 'store_owner') {
-      const userStores = await Store.findAll({ where: { ownerId: req.user.id } });
-      const storeIds = userStores.map(s => s.id);
-      whereClause.storeId = { [sequelize.Sequelize.Op.in]: storeIds };
-    }
+  const userStores = await Store.findAll({ where: { ownerId: req.user.id } });
+  const storeIds = userStores.map(s => s.id);
+  if (storeIds.length > 0) {
+    whereClause.storeId = storeIds;
+  } else {
+    // Si no tiene tiendas, retornar array vacío
+    return res.json({ orders: [] });
+  }
+}
 
     const orders = await Order.findAll({
       where: whereClause,
@@ -1037,13 +1042,13 @@ app.get('/api/stats', authenticateToken, async (req, res) => {
           .reduce((sum, o) => sum + (o.driverEarnings || 0), 0)
       };
     } else if (userRole === 'store_owner') {
-      const userStores = await Store.findAll({ where: { ownerId: userId } });
-      const storeIds = userStores.map(s => s.id);
-      const storeOrders = await Order.findAll({ 
-        where: { 
-          storeId: { [sequelize.Sequelize.Op.in]: storeIds } 
-        } 
-      });
+  const userStores = await Store.findAll({ where: { ownerId: userId } });
+  const storeIds = userStores.map(s => s.id);
+  const storeOrders = await Order.findAll({ 
+    where: { 
+      storeId: storeIds.length > 0 ? storeIds : null
+    } 
+  });
       const completedOrders = storeOrders.filter(o => o.status === 'delivered');
       const today = new Date().toDateString();
       
