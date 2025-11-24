@@ -137,7 +137,7 @@ router.post('/stores', authenticateToken, checkRole('store_owner'), multer().sin
             return res.status(400).json({ error: 'El logo de la tienda es requerido' });
         }
 
-        // ✅ CORRECCIÓN FINAL: Usar req.file.buffer y especificar 'stores'
+        // Usar req.file.buffer y especificar 'stores' (Corrección de Cloudinary #2 y #3)
         const logoUrl = await uploadImage(req.file.buffer, 'stores'); 
 
         const { name, description, address, phone, category } = req.body;
@@ -151,7 +151,11 @@ router.post('/stores', authenticateToken, checkRole('store_owner'), multer().sin
             ownerId: req.user.id,
             isOpen: true,
             rating: 0,
-            deliveryTime: '30-45 min'
+            deliveryTime: '30-45 min',
+            // 🔥 CORRECCIÓN: Agregando valores predeterminados para evitar la Violación NotNull
+            deliveryFee: 0, 
+            minOrder: 0,    
+            location: address || 'Ubicación no especificada', 
         });
 
         res.status(201).json({ store: newStore });
@@ -213,7 +217,7 @@ router.post('/products', authenticateToken, checkRole('store_owner'), multer().s
             return res.status(403).json({ error: 'Tienda no válida o no te pertenece' });
         }
 
-        // ✅ CORRECCIÓN FINAL: Usar req.file.buffer y especificar 'products'
+        // Usar req.file.buffer y especificar 'products' (Corrección de Cloudinary #2 y #3)
         const imageUrl = await uploadImage(req.file.buffer, 'products');
 
         const product = await Product.create({
@@ -430,7 +434,8 @@ app.get('/:page?', (req, res) => {
   if (validPages.includes(page)) {
     res.sendFile(path.join(__dirname, 'public', `${page}.html`));
   } else {
-    res.status(404).sendFile(path.join(__dirname, 'public', '404.html'));
+    // ✅ CORRECCIÓN FINAL: Si la página no es válida y no existe 404.html, enviar un mensaje 404 simple.
+    res.status(404).send('404 | Página no encontrada.');
   }
 });
 
