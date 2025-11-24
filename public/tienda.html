@@ -77,7 +77,7 @@
             }
         }
 
-        // ✅ CORRECCIÓN: Nueva función para CREAR TIENDA (maneja FormData y archivo)
+        // ✅ CORRECCIÓN FINAL: Función para CREAR TIENDA (Eliminada la referencia a selectedStore.id)
         async function createStore(event) {
             event.preventDefault();
             const form = document.getElementById('createStoreForm');
@@ -109,13 +109,14 @@
             }
         }
 
-        // ✅ CORRECCIÓN: Función para CREAR PRODUCTO (maneja FormData y archivo)
+        // ✅ Función para CREAR PRODUCTO (maneja FormData y archivo)
         async function createProduct(event) {
             event.preventDefault();
             const form = event.target;
             const formData = new FormData(form);
             
             // Añadir el storeId al FormData (necesario para el backend)
+            // Esto solo se llama cuando ya hay un selectedStore (Línea 493)
             formData.append('storeId', selectedStore.id);
 
             try {
@@ -260,7 +261,7 @@
             return actions[status];
         }
 
-        // ✅ NUEVA FUNCIÓN: Formulario para crear la tienda
+        // Función: Formulario para crear la tienda (Se llama desde render())
         function renderCreateStore() {
             return `
                 <div class="bg-white rounded-xl shadow-lg p-12 text-center max-w-lg mx-auto mt-12">
@@ -442,6 +443,7 @@
         }
 
         function renderProducts() {
+            // Si no hay tienda seleccionada (el usuario aún no ha creado una)
             if (!selectedStore) {
                 return `
                     <div class="bg-white rounded-xl shadow-lg p-12 text-center">
