@@ -494,8 +494,11 @@
                                                 src="${product.image}" 
                                                 alt="${product.name}"
                                                 class="w-24 h-24 object-cover rounded-lg"
-                                                onerror="this.src='https://via.placeholder.com/96?text=Sin+Imagen'"
+                                                onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
                                             />
+                                            <div class="w-24 h-24 bg-gray-200 rounded-lg items-center justify-center text-gray-400 text-2xl" style="display:none;">
+                                                🍽️
+                                            </div>
                                         ` : `
                                             <div class="w-24 h-24 bg-gray-200 rounded-lg flex items-center justify-center text-gray-400 text-2xl">
                                                 🍽️
