@@ -10,7 +10,7 @@ const bcrypt = require('bcryptjs');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 
-// 🔥 IMPORTAR CLOUDINARY (Asegúrate de que ./config/cloudinary.js esté correcto y exporte las funciones)
+// 🔥 IMPORTAR CLOUDINARY
 const { uploadImage, deleteImage } = require('./config/cloudinary');
 
 const { User, Store, Product, Order, sequelize } = require('./models');
@@ -61,7 +61,6 @@ const authenticateToken = (req, res, next) => {
       return res.status(403).json({ error: 'Token inválido o expirado' });
     }
     
-    // Adjuntar el objeto User completo a la solicitud (para evitar rehacer consultas)
     try {
       req.user = await User.findByPk(user.id);
       if (!req.user) return res.status(404).json({ error: 'Usuario no encontrado' });
@@ -138,7 +137,7 @@ router.post('/stores', authenticateToken, checkRole('store_owner'), multer().sin
             return res.status(400).json({ error: 'El logo de la tienda es requerido' });
         }
 
-        // ✅ CORRECCIÓN APLICADA: Se pasa 'stores' como carpeta para evitar el error 'Missing required parameter folder'
+        // ✅ CORRECCIÓN FINAL: Usar req.file.buffer y especificar 'stores'
         const logoUrl = await uploadImage(req.file.buffer, 'stores'); 
 
         const { name, description, address, phone, category } = req.body;
@@ -214,7 +213,7 @@ router.post('/products', authenticateToken, checkRole('store_owner'), multer().s
             return res.status(403).json({ error: 'Tienda no válida o no te pertenece' });
         }
 
-        // ✅ CORRECCIÓN APLICADA: Se pasa 'products' como carpeta para evitar el error 'Missing required parameter folder'
+        // ✅ CORRECCIÓN FINAL: Usar req.file.buffer y especificar 'products'
         const imageUrl = await uploadImage(req.file.buffer, 'products');
 
         const product = await Product.create({
@@ -310,7 +309,6 @@ router.get('/orders', authenticateToken, async (req, res) => {
         } else if (req.user.role === 'client') {
             whereClause = { userId: req.user.id };
         } 
-        // Si es 'admin' o 'driver', se obtienen todos (o se podría añadir lógica específica)
 
         const orders = await Order.findAll({
             where: whereClause,
@@ -348,7 +346,6 @@ router.put('/orders/:id/status', authenticateToken, async (req, res) => {
         }
         
         // Lógica de transición de estado (simplificada)
-        // Solo la tienda puede pasar de pending -> accepted -> preparing -> ready
         const storeCanUpdate = ['pending', 'accepted', 'preparing'].includes(order.status);
         const driverCanUpdate = ['ready', 'picked_up', 'on_way'].includes(order.status) && isDriver;
 
@@ -480,6 +477,4 @@ process.on('SIGTERM', async () => {
   });
 });
 
-
 startServer();
-
