@@ -3,210 +3,618 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Detalles de la Tienda - Delivery App</title>
-    <link rel="stylesheet" href="styles.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <title>Panel Tienda - Delivery</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
 </head>
-<body>
-    <header>
-        <div class="container header-content">
-            <h1 id="store-header-name">Cargando Tienda...</h1>
-            <nav>
-                <a href="index.html">Inicio</a>
-                <a href="cart.html"><i class="fas fa-shopping-cart"></i> Carrito (<span id="cart-count">0</span>)</a>
-            </nav>
-        </div>
-    </header>
-
-    <main class="container">
-        <section id="store-details" class="store-details-section">
-            <div class="store-info-header">
-                <img id="store-image" src="placeholder.jpg" alt="Imagen de la Tienda" class="store-main-image">
-                <div class="info-text">
-                    <h2 id="store-name"></h2>
-                    <p id="store-description"></p>
-                    <p class="store-status" id="store-status">Estado: <span class="status-indicator"></span></p>
-                    <div class="store-meta">
-                        <span><i class="fas fa-motorcycle"></i> Envío: <span id="store-fee"></span></span>
-                        <span><i class="fas fa-clock"></i> Tiempo: <span id="store-time"></span></span>
-                        <span><i class="fas fa-money-bill"></i> Mínimo: <span id="store-min-order"></span></span>
-                    </div>
-                </div>
-            </div>
-            <p id="store-address" class="address-text"><i class="fas fa-map-marker-alt"></i></p>
-            <hr>
-        </section>
-
-        <section id="products-section">
-            <h3>Nuestros Productos</h3>
-            <div id="product-list" class="product-grid">
-                </div>
-            <p id="no-products" class="hidden">No hay productos disponibles en esta tienda.</p>
-        </section>
-    </main>
-
-    <footer>
-        <div class="container">
-            <p>&copy; 2024 Delivery App. Todos los derechos reservados.</p>
-        </div>
-    </footer>
+<body class="bg-gray-100 min-h-screen">
+    <div id="root"></div>
 
     <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const urlParams = new URLSearchParams(window.location.search);
-            const storeId = urlParams.get('id');
+        const API_URL = '/api';
+        let user = null;
+        let token = localStorage.getItem('token');
+        let myStores = [];
+        let myProducts = [];
+        let myOrders = [];
+        let stats = null;
+        let currentView = 'dashboard';
+        let selectedStore = null;
 
-            if (!storeId) {
-                document.getElementById('store-header-name').textContent = 'Error: Tienda no especificada';
-                return;
-            }
+        if (!token) {
+            window.location.href = '/';
+        }
 
-            fetchStoreDetails(storeId);
-            updateCartCount();
-        });
+        async function apiCall(endpoint, method = 'GET', body = null) {
+            const options = {
+                method,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                ...(body && { body: JSON.stringify(body) })
+            };
 
-        async function fetchStoreDetails(storeId) {
             try {
-                // 1. Obtener detalles de la tienda
-                const response = await fetch(`/api/stores/${storeId}`);
-                if (!response.ok) throw new Error('Tienda no encontrada');
-                const { store, products } = await response.json();
-
-                // 2. Renderizar detalles de la tienda
-                renderStoreInfo(store);
-
-                // 3. Renderizar productos
-                renderProducts(products);
-
-            } catch (error) {
-                console.error('Error al obtener detalles:', error);
-                document.getElementById('store-header-name').textContent = 'Tienda no disponible';
-                document.getElementById('store-details').innerHTML = `<p class="error-message">${error.message}. Por favor, regresa a la <a href="index.html">página principal</a>.</p>`;
-                document.getElementById('products-section').classList.add('hidden');
-            }
-        }
-
-        function renderStoreInfo(store) {
-            document.getElementById('store-header-name').textContent = store.name;
-            document.getElementById('store-name').textContent = store.name;
-            document.getElementById('store-description').textContent = store.description;
-
-            // 🛑 CORRECCIÓN CLOUDINARY CRÍTICA 🛑
-            // Usamos directamente la URL que viene del backend, sin prefijos /uploads/
-            const storeImage = document.getElementById('store-image');
-            storeImage.src = store.image || 'placeholder.jpg';
-            storeImage.alt = `Imagen de ${store.name}`;
-            // 🛑 FIN DE CORRECCIÓN 🛑
-            
-            document.getElementById('store-fee').textContent = `$${store.deliveryFee.toFixed(2)}`;
-            document.getElementById('store-time').textContent = `${store.deliveryTime} min`;
-            document.getElementById('store-min-order').textContent = `$${store.minOrder.toFixed(2)}`;
-            document.getElementById('store-address').textContent = store.location.address;
-
-            const statusIndicator = document.querySelector('#store-status .status-indicator');
-            if (store.isOpen) {
-                statusIndicator.textContent = 'Abierta';
-                statusIndicator.style.color = 'green';
-            } else {
-                statusIndicator.textContent = 'Cerrada';
-                statusIndicator.style.color = 'red';
-            }
-        }
-
-        function renderProducts(products) {
-            const productList = document.getElementById('product-list');
-            productList.innerHTML = '';
-            
-            if (products.length === 0) {
-                document.getElementById('no-products').classList.remove('hidden');
-                return;
-            }
-            document.getElementById('no-products').classList.add('hidden');
-
-            products.forEach(product => {
-                const productCard = document.createElement('div');
-                productCard.className = 'product-card';
+                const response = await fetch(`${API_URL}${endpoint}`, options);
+                const data = await response.json();
                 
-                // 🛑 CORRECCIÓN CLOUDINARY CRÍTICA 🛑
-                // Usamos directamente la URL que viene del backend, sin prefijos /uploads/
-                const imageUrl = product.image || 'placeholder.jpg';
-                // 🛑 FIN DE CORRECCIÓN 🛑
-
-                productCard.innerHTML = `
-                    <img src="${imageUrl}" alt="${product.name}">
-                    <h4>${product.name}</h4>
-                    <p class="product-description">${product.description}</p>
-                    <p class="product-price">$${product.price.toFixed(2)}</p>
-                    <button 
-                        class="add-to-cart-btn ${product.available ? '' : 'disabled'}" 
-                        data-product-id="${product.id}"
-                        data-store-id="${product.storeId}"
-                        ${product.available ? '' : 'disabled'}
-                    >
-                        ${product.available ? 'Añadir al Carrito' : 'No Disponible'}
-                    </button>
-                `;
-                productList.appendChild(productCard);
-
-                // Agregar listener al botón si está disponible
-                if (product.available) {
-                    productCard.querySelector('.add-to-cart-btn').addEventListener('click', (e) => {
-                        addToCart(product);
-                    });
+                if (!response.ok) {
+                    throw new Error(data.error || 'Error en la solicitud');
                 }
-            });
+                
+                return data;
+            } catch (error) {
+                alert(error.message);
+                throw error;
+            }
         }
 
-        function getCart() {
-            const cart = localStorage.getItem('cart');
-            return cart ? JSON.parse(cart) : { items: [], storeId: null, storeName: null };
+        async function loadData() {
+            try {
+                const storesData = await apiCall('/stores');
+                myStores = storesData.stores.filter(s => s.ownerId === user.id);
+                
+                if (myStores.length > 0 && !selectedStore) {
+                    selectedStore = myStores[0];
+                }
+                
+                if (selectedStore) {
+                    const productsData = await apiCall(`/stores/${selectedStore.id}/products`);
+                    myProducts = productsData.products;
+                }
+                
+                const ordersData = await apiCall('/orders');
+                myOrders = ordersData.orders;
+                
+                const statsData = await apiCall('/stats');
+                stats = statsData.stats;
+                
+                render();
+            } catch (error) {
+                console.error('Error cargando datos:', error);
+            }
         }
 
-        function saveCart(cart) {
-            localStorage.setItem('cart', JSON.stringify(cart));
-            updateCartCount();
+
+        /* --------------------------------------------------------------------
+           🔥 CORRECCIÓN: ENVÍO DE PRODUCTOS CON IMAGEN (FormData)
+           -------------------------------------------------------------------- */
+        async function createProduct(event) {
+            event.preventDefault();
+            const form = event.target;
+            const formData = new FormData(form);
+
+            // Agregar storeId al formData
+            formData.append('storeId', selectedStore.id);
+
+            try {
+                const response = await fetch(`${API_URL}/products`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: formData
+                });
+
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Error al crear producto');
+
+                alert('Producto creado exitosamente');
+                form.reset();
+                loadData();
+            } catch (error) {
+                console.error('Error creando producto:', error);
+                alert(error.message);
+            }
+        }
+        /* -------------------------------------------------------------------- */
+
+
+        async function toggleProductAvailability(productId, currentStatus) {
+            try {
+                await apiCall(`/products/${productId}`, 'PUT', {
+                    available: !currentStatus
+                });
+                loadData();
+            } catch (error) {
+                console.error('Error actualizando producto:', error);
+            }
         }
 
-        function updateCartCount() {
-            const cart = getCart();
-            const totalItems = cart.items.reduce((sum, item) => sum + item.quantity, 0);
-            document.getElementById('cart-count').textContent = totalItems;
+        async function deleteProduct(productId) {
+            if (!confirm('¿Eliminar este producto?')) return;
+            
+            try {
+                await apiCall(`/products/${productId}`, 'DELETE');
+                alert('Producto eliminado');
+                loadData();
+            } catch (error) {
+                console.error('Error eliminando producto:', error);
+            }
         }
 
-        function addToCart(product) {
-            let cart = getCart();
+        async function toggleStoreStatus() {
+            if (!selectedStore) return;
+            
+            try {
+                await apiCall(`/stores/${selectedStore.id}`, 'PUT', {
+                    isOpen: !selectedStore.isOpen
+                });
+                alert(`Tienda ${selectedStore.isOpen ? 'cerrada' : 'abierta'}`);
+                loadData();
+            } catch (error) {
+                console.error('Error actualizando tienda:', error);
+            }
+        }
 
-            if (cart.storeId && cart.storeId !== product.storeId) {
-                if (!confirm(`Ya tienes productos de otra tienda (${cart.storeName}) en tu carrito. ¿Quieres vaciar el carrito y añadir este producto de ${document.getElementById('store-name').textContent}?`)) {
+        function handleLogout() {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            window.location.href = '/';
+        }
+
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('es-MX', {
+                style: 'currency',
+                currency: 'MXN'
+            }).format(amount || 0);
+        }
+
+        async function updateOrderStatus(orderId, newStatus) {
+            try {
+                await apiCall(`/orders/${orderId}/status`, 'PUT', { 
+                    status: newStatus,
+                    note: `Actualizado por tienda`
+                });
+                alert('Estado actualizado');
+                loadData();
+            } catch (error) {
+                console.error('Error actualizando estado:', error);
+            }
+        }
+
+        async function acceptOrder(orderId) {
+            if (confirm('¿Confirmar este pedido?')) {
+                await updateOrderStatus(orderId, 'accepted');
+            }
+        }
+
+        async function rejectOrder(orderId) {
+            if (confirm('¿Rechazar este pedido? Esta acción no se puede deshacer.')) {
+                await updateOrderStatus(orderId, 'cancelled');
+            }
+        }
+
+        function getStatusColor(status) {
+            const colors = {
+                'pending': 'bg-yellow-500',
+                'accepted': 'bg-blue-500',
+                'preparing': 'bg-indigo-500',
+                'ready': 'bg-purple-500',
+                'picked_up': 'bg-violet-500',
+                'on_way': 'bg-orange-500',
+                'delivered': 'bg-green-500',
+                'cancelled': 'bg-red-500'
+            };
+            return colors[status] || 'bg-gray-500';
+        }
+
+        function getStatusText(status) {
+            const texts = {
+                'pending': '⏳ Pendiente de aceptar',
+                'accepted': '✓ Aceptado',
+                'preparing': '👨‍🍳 Preparando',
+                'ready': '📦 Listo para recoger',
+                'picked_up': '🚗 Recogido',
+                'on_way': '🛵 En camino',
+                'delivered': '✅ Entregado',
+                'cancelled': '❌ Cancelado'
+            };
+            return texts[status] || status;
+        }
+
+        function getNextAction(status) {
+            const actions = {
+                'pending': { text: 'Aceptar Pedido', nextStatus: 'accepted', color: 'bg-blue-600 hover:bg-blue-700' },
+                'accepted': { text: 'Comenzar Preparación', nextStatus: 'preparing', color: 'bg-indigo-600 hover:bg-indigo-700' },
+                'preparing': { text: 'Marcar Listo', nextStatus: 'ready', color: 'bg-purple-600 hover:bg-purple-700' },
+                'ready': null,
+                'picked_up': null,
+                'on_way': null,
+                'delivered': null,
+                'cancelled': null
+            };
+            return actions[status];
+        }
+
+        function render() {
+            const root = document.getElementById('root');
+            
+            root.innerHTML = `
+                <div class="container mx-auto px-4 py-6">
+                    <!-- Header -->
+                    <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+                        <div class="flex justify-between items-center">
+                            <div class="flex items-center gap-3">
+                                <div class="text-4xl">🏪</div>
+                                <div>
+                                    <h1 class="text-2xl font-bold text-gray-800">Panel Tienda</h1>
+                                    <p class="text-gray-600">${user.name}</p>
+                                </div>
+                            </div>
+                            
+                            <div class="flex items-center gap-3">
+                                ${selectedStore ? `
+                                    <button 
+                                        onclick="toggleStoreStatus()"
+                                        class="px-6 py-2 rounded-lg font-semibold transition ${selectedStore.isOpen ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-gray-400 hover:bg-gray-500 text-white'}"
+                                    >
+                                        ${selectedStore.isOpen ? '✓ Abierta' : '✗ Cerrada'}
+                                    </button>
+                                ` : ''}
+                                
+                                <button onclick="handleLogout()" class="bg-red-500 hover:bg-red-600 text-white px-6 py-2 rounded-lg transition">
+                                    Cerrar Sesión
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Navegación -->
+                        <div class="flex gap-2 mt-4">
+                            <button 
+                                onclick="currentView = 'dashboard'; render();"
+                                class="px-4 py-2 rounded-lg font-semibold transition ${currentView === 'dashboard' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}"
+                            >
+                                📊 Dashboard
+                            </button>
+                            <button 
+                                onclick="currentView = 'products'; render();"
+                                class="px-4 py-2 rounded-lg font-semibold transition ${currentView === 'products' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}"
+                            >
+                                🍕 Productos
+                            </button>
+                            <button 
+                                onclick="currentView = 'orders'; render();"
+                                class="px-4 py-2 rounded-lg font-semibold transition ${currentView === 'orders' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}"
+                            >
+                                📦 Pedidos
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Contenido -->
+                    ${currentView === 'dashboard' ? renderDashboard() : ''}
+                    ${currentView === 'products' ? renderProducts() : ''}
+                    ${currentView === 'orders' ? renderOrders() : ''}
+                </div>
+            `;
+        }
+
+        function renderDashboard() {
+            if (!stats) return '<div class="text-center py-12">Cargando estadísticas...</div>';
+            
+            return `
+                <div class="grid md:grid-cols-4 gap-6 mb-6">
+                    <div class="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg p-6 text-white">
+                        <div class="text-sm opacity-80">Tiendas</div>
+                        <div class="text-3xl font-bold mt-2">${stats.totalStores}</div>
+                    </div>
+                    <div class="bg-gradient-to-br from-green-500 to-green-600 rounded-lg shadow-lg p-6 text-white">
+                        <div class="text-sm opacity-80">Ingresos Totales</div>
+                        <div class="text-3xl font-bold mt-2">${formatCurrency(stats.totalRevenue)}</div>
+                    </div>
+                    <div class="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow-lg p-6 text-white">
+                        <div class="text-sm opacity-80">Pedidos Totales</div>
+                        <div class="text-3xl font-bold mt-2">${stats.totalOrders}</div>
+                    </div>
+                    <div class="bg-gradient-to-br from-yellow-500 to-yellow-600 rounded-lg shadow-lg p-6 text-white">
+                        <div class="text-sm opacity-80">Pedidos Hoy</div>
+                        <div class="text-3xl font-bold mt-2">${stats.ordersToday}</div>
+                    </div>
+                </div>
+
+                <div class="grid md:grid-cols-2 gap-6">
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <h3 class="text-xl font-bold text-gray-800 mb-4">🏪 Mis Tiendas</h3>
+                        <div class="space-y-3">
+                            ${myStores.map(store => `
+                                <div class="border rounded-lg p-4 ${store.id === selectedStore?.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}">
+                                    <div class="flex justify-between items-start mb-2">
+                                        <div>
+                                            <div class="font-bold text-gray-800">${store.name}</div>
+                                            <div class="text-sm text-gray-600">${store.category}</div>
+                                        </div>
+                                        <span class="px-2 py-1 rounded text-xs ${store.isOpen ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">
+                                            ${store.isOpen ? 'Abierta' : 'Cerrada'}
+                                        </span>
+                                    </div>
+                                    <div class="flex gap-4 text-sm text-gray-600">
+                                        <span>⭐ ${store.rating}</span>
+                                        <span>🕐 ${store.deliveryTime}</span>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <h3 class="text-xl font-bold text-gray-800 mb-4">📦 Pedidos Activos (${stats.activeOrders})</h3>
+                        <div class="space-y-3 max-h-96 overflow-y-auto">
+                            ${myOrders.filter(o => !['delivered', 'cancelled'].includes(o.status)).map(order => `
+                                <div class="border rounded-lg p-3">
+                                    <div class="flex justify-between items-start mb-2">
+                                        <div>
+                                            <div class="font-semibold">Pedido #${order.orderNumber}</div>
+                                            <div class="text-sm text-gray-600">${order.customer.name}</div>
+                                        </div>
+                                        <span class="px-2 py-1 rounded text-xs text-white ${getStatusColor(order.status)}">
+                                            ${getStatusText(order.status)}
+                                        </span>
+                                    </div>
+                                    <div class="text-sm">
+                                        <div><strong>Items:</strong> ${order.items.length}</div>
+                                        <div><strong>Total:</strong> ${formatCurrency(order.subtotal)}</div>
+                                    </div>
+                                </div>
+                            `).join('') || '<p class="text-gray-500 text-center py-4">No hay pedidos activos</p>'}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderProducts() {
+            if (!selectedStore) {
+                return `
+                    <div class="bg-white rounded-xl shadow-lg p-12 text-center">
+                        <p class="text-gray-600 mb-4">Primero debes crear una tienda</p>
+                        <button class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition">
+                            Crear Tienda
+                        </button>
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="grid md:grid-cols-2 gap-6">
+                    <!-- Formulario de producto -->
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <h3 class="text-xl font-bold text-gray-800 mb-4">➕ Agregar Producto</h3>
+                        
+                        <form onsubmit="createProduct(event)" class="space-y-4" enctype="multipart/form-data">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Nombre *</label>
+                                <input 
+                                    type="text" 
+                                    name="name"
+                                    placeholder="Ej: Tacos de Pastor"
+                                    class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                    required
+                                />
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Descripción</label>
+                                <textarea 
+                                    name="description"
+                                    placeholder="Descripción del producto..."
+                                    class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                    rows="3"
+                                ></textarea>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Precio *</label>
+                                    <input 
+                                        type="number" 
+                                        name="price"
+                                        placeholder="0.00"
+                                        min="0"
+                                        step="0.01"
+                                        class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                        required
+                                    />
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Categoría *</label>
+                                    <input 
+                                        type="text" 
+                                        name="category"
+                                        placeholder="Ej: Tacos"
+                                        class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                        required
+                                    />
+                                </div>
+                            </div>
+
+                            <!-- 🔥 Campo de imagen agregado -->
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Imagen *</label>
+                                <input 
+                                    type="file"
+                                    name="image"
+                                    accept="image/*"
+                                    class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                />
+                            </div>
+
+                            <button 
+                                type="submit" 
+                                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition"
+                            >
+                                Crear Producto
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- Lista de productos -->
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <h3 class="text-xl font-bold text-gray-800 mb-4">📋 Productos (${myProducts.length})</h3>
+                        
+                        <div class="space-y-3 max-h-[600px] overflow-y-auto">
+
+                            ${myProducts.map(product => `
+                                <div class="border rounded-lg p-4">
+                                    
+                                    <div class="flex gap-3 items-start mb-3">
+                                        <!-- 🔥 Mostrar imagen del producto -->
+                                        <img src="${product.image ?? '/img/default.png'}" class="w-20 h-20 object-cover rounded-lg border">
+
+                                        <div class="flex-1">
+                                            <div class="font-bold text-gray-800">${product.name}</div>
+                                            <div class="text-sm text-gray-600">${product.description}</div>
+                                            <div class="text-sm text-gray-500 mt-1">${product.category}</div>
+                                        </div>
+
+                                        <div class="text-right">
+                                            <div class="font-bold text-lg text-gray-800">${formatCurrency(product.price)}</div>
+                                        </div>
+                                    </div>
+
+                                    
+                                    <div class="flex gap-2 mt-3">
+                                        <button 
+                                            onclick="toggleProductAvailability(${product.id}, ${product.available})"
+                                            class="flex-1 px-3 py-2 rounded text-sm font-semibold transition ${product.available ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}"
+                                        >
+                                            ${product.available ? '✓ Disponible' : '✗ No disponible'}
+                                        </button>
+                                        <button 
+                                            onclick="deleteProduct(${product.id})"
+                                            class="px-3 py-2 bg-red-100 text-red-700 hover:bg-red-200 rounded text-sm font-semibold transition"
+                                        >
+                                            🗑️
+                                        </button>
+                                    </div>
+                                </div>
+                            `).join('')}
+                            
+                            ${myProducts.length === 0 ? '<p class="text-gray-500 text-center py-8">No hay productos aún</p>' : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderOrders() {
+            const activeOrders = myOrders.filter(o => !['delivered', 'cancelled'].includes(o.status));
+            const completedOrders = myOrders.filter(o => ['delivered', 'cancelled'].includes(o.status));
+            
+            return `
+                <div>
+                    ${activeOrders.length > 0 ? `
+                        <div class="mb-6">
+                            <h3 class="text-2xl font-bold text-gray-800 mb-4">Pedidos Activos (${activeOrders.length})</h3>
+                            <div class="grid md:grid-cols-2 gap-4">
+                                ${activeOrders.map(order => {
+                                    const nextAction = getNextAction(order.status);
+                                    return `
+                                    <div class="bg-white rounded-xl shadow-lg p-6">
+                                        <div class="flex justify-between items-start mb-4">
+                                            <div>
+                                                <div class="font-bold text-lg">Pedido #${order.orderNumber}</div>
+                                                <div class="text-sm text-gray-600">${order.customer.name}</div>
+                                            </div>
+                                            <span class="px-3 py-1 rounded text-xs text-white ${getStatusColor(order.status)}">
+                                                ${getStatusText(order.status)}
+                                            </span>
+                                        </div>
+                                        
+                                        <div class="bg-gray-50 rounded p-3 mb-3">
+                                            <div class="text-sm font-semibold text-gray-700 mb-2">Items:</div>
+                                            ${order.items.map(item => `
+                                                <div class="text-sm text-gray-600">${item.quantity}x ${item.name}</div>
+                                            `).join('')}
+                                        </div>
+                                        
+                                        <div class="flex justify-between items-center">
+                                            <div class="text-sm text-gray-600">Total a cobrar</div>
+                                            <div class="text-xl font-bold text-green-600">${formatCurrency(order.subtotal)}</div>
+                                        </div>
+                                        
+                                        ${order.notes ? `
+                                            <div class="mt-3 bg-yellow-50 border border-yellow-200 rounded p-2 text-sm">
+                                                <strong>Notas:</strong> ${order.notes}
+                                            </div>
+                                        ` : ''}
+                                        
+                                        ${nextAction ? `
+                                            <button 
+                                                onclick="updateOrderStatus(${order.id}, '${nextAction.nextStatus}')"
+                                                class="w-full mt-4 ${nextAction.color} text-white font-semibold py-3 rounded-lg transition"
+                                            >
+                                                ${nextAction.text}
+                                            </button>
+                                        ` : order.status === 'pending' ? `
+                                            <div class="mt-4 grid grid-cols-2 gap-3">
+                                                <button 
+                                                    onclick="acceptOrder(${order.id})"
+                                                    class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 rounded-lg transition"
+                                                >
+                                                    ✓ Aceptar
+                                                </button>
+                                                <button 
+                                                    onclick="rejectOrder(${order.id})"
+                                                    class="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 rounded-lg transition"
+                                                >
+                                                    ✗ Rechazar
+                                                </button>
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                `}).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
+                    
+                    <div>
+                        <h3 class="text-2xl font-bold text-gray-800 mb-4">Historial (${completedOrders.length})</h3>
+                        ${completedOrders.length === 0 ? `
+                            <div class="bg-white rounded-xl shadow-lg p-12 text-center">
+                                <p class="text-gray-600">No hay pedidos completados aún</p>
+                            </div>
+                        ` : `
+                            <div class="bg-white rounded-xl shadow-lg p-6">
+                                <div class="space-y-3">
+                                    ${completedOrders.map(order => `
+                                        <div class="flex items-center justify-between p-3 bg-gray-50 rounded">
+                                            <div class="flex-1">
+                                                <div class="flex items-center gap-3">
+                                                    <span class="font-semibold">Pedido #${order.orderNumber}</span>
+                                                    <span class="px-2 py-1 rounded text-xs text-white ${getStatusColor(order.status)}">
+                                                        ${getStatusText(order.status)}
+                                                    </span>
+                                                </div>
+                                                <div class="text-sm text-gray-600">${order.customer.name} • ${new Date(order.createdAt).toLocaleDateString('es-MX')}</div>
+                                            </div>
+                                            <div class="font-bold text-green-600">${formatCurrency(order.subtotal)}</div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        `}
+                    </div>
+                </div>
+            `;
+        }
+
+        apiCall('/users/profile')
+            .then(data => {
+                user = data.user;
+                if (user.role !== 'store_owner') {
+                    alert('Acceso no autorizado');
+                    window.location.href = '/';
                     return;
                 }
-                cart = { items: [], storeId: null, storeName: null }; // Vaciar carrito
-            }
-
-            // Si el carrito está vacío, establecer la tienda
-            if (!cart.storeId) {
-                cart.storeId = product.storeId;
-                cart.storeName = document.getElementById('store-name').textContent;
-            }
-
-            const existingItem = cart.items.find(item => item.productId === product.id);
-
-            if (existingItem) {
-                existingItem.quantity += 1;
-            } else {
-                cart.items.push({
-                    productId: product.id,
-                    name: product.name,
-                    price: product.price,
-                    image: product.image, // Guardamos la URL de Cloudinary
-                    quantity: 1
-                });
-            }
-
-            saveCart(cart);
-            alert(`"${product.name}" añadido al carrito!`);
-        }
-
+                loadData();
+            })
+            .catch(() => {
+                localStorage.removeItem('token');
+                window.location.href = '/';
+            });
     </script>
+<script src="/notifications.js"></script>
 </body>
 </html>
