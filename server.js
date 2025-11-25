@@ -979,6 +979,108 @@ app.get('/api/drivers', authenticateToken, async (req, res) => {
 });
 
 app.get('/api/drivers/available', async (req, res) => {
+  try {
+    const drivers = await User.findAll({
+      where: { 
+        role: 'driver',
+        available: true,
+        approved: true
+      },
+      attributes: ['id', 'name', 'currentLocation', 'rating']
+    });
+
+    res.json({ drivers });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener conductores', details: error.message });
+  }
+});
+
+app.put('/api/drivers/availability', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'driver') {
+      return res.status(403).json({ error: 'Solo conductores pueden cambiar disponibilidad' });
+    }
+
+    const { available } = req.body;
+    const driver = await User.findByPk(req.user.id);
+
+    if (!driver.approved) {
+      return res.status(403).json({ error: 'Tu cuenta debe ser aprobada primero' });
+    }
+
+    await driver.update({ available });
+
+    res.json({ 
+      message: `Disponibilidad actualizada a ${available ? 'disponible' : 'no disponible'}`,
+      available: driver.available
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al actualizar disponibilidad', details: error.message });
+  }
+});
+
+app.put('/api/drivers/:driverId/approve', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    const { driverId } = req.params;
+    const driver = await User.findByPk(driverId);
+
+    if (!driver) {
+      return res.status(404).json({ error: 'Conductor no encontrado' });
+    }
+
+    if (driver.role !== 'driver') {
+      return res.status(400).json({ error: 'El usuario no es un conductor' });
+    }
+
+    await driver.update({ approved: true });
+
+    notifyUser(driver.id, {
+      title: 'Cuenta aprobada',
+      message: 'Tu cuenta de conductor ha sido aprobada. Ya puedes comenzar a trabajar.',
+      type: 'success',
+      timestamp: new Date()
+    });
+
+    res.json({ 
+      message: 'Conductor aprobado exitosamente',
+      driver
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al aprobar conductor', details: error.message });
+  }
+});
+
+app.delete('/api/drivers/:driverId', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    const { driverId } = req.params;
+    const driver = await User.findByPk(driverId);
+
+    if (!driver) {
+      return res.status(404).json({ error: 'Conductor no encontrado' });
+    }
+
+    notifyUser(driver.id, {
+      title: 'Solicitud rechazada',
+      message: 'Tu solicitud de conductor no ha sido aprobada.',
+      type: 'warning',
+      timestamp: new Date()
+    });
+
+    await driver.destroy();
+
+    res.json({ message: 'Conductor rechazado' });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al rechazar conductor', details: error.message });
+  }
+});
 
 // ============================================
 // OBTENER TODOS LOS CLIENTES (ADMIN)
@@ -1107,108 +1209,6 @@ app.post('/api/orders/:id/assign', authenticateToken, async (req, res) => {
   }
 });
 
-  try {
-    const drivers = await User.findAll({
-      where: { 
-        role: 'driver',
-        available: true,
-        approved: true
-      },
-      attributes: ['id', 'name', 'currentLocation', 'rating']
-    });
-
-    res.json({ drivers });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al obtener conductores', details: error.message });
-  }
-});
-
-app.put('/api/drivers/availability', authenticateToken, async (req, res) => {
-  try {
-    if (req.user.role !== 'driver') {
-      return res.status(403).json({ error: 'Solo conductores pueden cambiar disponibilidad' });
-    }
-
-    const { available } = req.body;
-    const driver = await User.findByPk(req.user.id);
-
-    if (!driver.approved) {
-      return res.status(403).json({ error: 'Tu cuenta debe ser aprobada primero' });
-    }
-
-    await driver.update({ available });
-
-    res.json({ 
-      message: `Disponibilidad actualizada a ${available ? 'disponible' : 'no disponible'}`,
-      available: driver.available
-    });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al actualizar disponibilidad', details: error.message });
-  }
-});
-
-app.put('/api/drivers/:driverId/approve', authenticateToken, async (req, res) => {
-  try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'No autorizado' });
-    }
-
-    const { driverId } = req.params;
-    const driver = await User.findByPk(driverId);
-
-    if (!driver) {
-      return res.status(404).json({ error: 'Conductor no encontrado' });
-    }
-
-    if (driver.role !== 'driver') {
-      return res.status(400).json({ error: 'El usuario no es un conductor' });
-    }
-
-    await driver.update({ approved: true });
-
-    notifyUser(driver.id, {
-      title: 'Cuenta aprobada',
-      message: 'Tu cuenta de conductor ha sido aprobada. Ya puedes comenzar a trabajar.',
-      type: 'success',
-      timestamp: new Date()
-    });
-
-    res.json({ 
-      message: 'Conductor aprobado exitosamente',
-      driver
-    });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al aprobar conductor', details: error.message });
-  }
-});
-
-app.delete('/api/drivers/:driverId', authenticateToken, async (req, res) => {
-  try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'No autorizado' });
-    }
-
-    const { driverId } = req.params;
-    const driver = await User.findByPk(driverId);
-
-    if (!driver) {
-      return res.status(404).json({ error: 'Conductor no encontrado' });
-    }
-
-    notifyUser(driver.id, {
-      title: 'Solicitud rechazada',
-      message: 'Tu solicitud de conductor no ha sido aprobada.',
-      type: 'warning',
-      timestamp: new Date()
-    });
-
-    await driver.destroy();
-
-    res.json({ message: 'Conductor rechazado' });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al rechazar conductor', details: error.message });
-  }
-});
 
 app.get('/api/stats', authenticateToken, async (req, res) => {
   try {
