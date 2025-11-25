@@ -22,9 +22,11 @@
         let products = [];
         let cart = [];
         let myOrders = [];
-        let currentView = 'stores'; // 'stores', 'products', 'cart', 'orders'
+        let currentView = 'stores';
         let selectedCategory = 'all';
         let searchQuery = '';
+        let searchTimeout = null;
+        let sortBy = 'default'; // default, price_asc, price_desc, name_asc, name_desc, rating, delivery_time, newest
 
         if (!token) {
             window.location.href = '/';
@@ -71,6 +73,8 @@
                 selectedStore = data.store;
                 products = data.products;
                 currentView = 'products';
+                selectedCategory = 'all';
+                sortBy = 'default';
                 render();
             } catch (error) {
                 console.error('Error cargando productos:', error);
@@ -183,47 +187,116 @@
         }
 
         function handleSearch(event) {
-            searchQuery = event.target.value.toLowerCase();
-            render();
+            const value = event.target.value;
+            
+            if (searchTimeout) {
+                clearTimeout(searchTimeout);
+            }
+            
+            searchTimeout = setTimeout(() => {
+                searchQuery = value.toLowerCase();
+                render();
+            }, 300);
         }
 
-        function filterStores() {
-            if (!searchQuery) return stores;
+        function getFilteredStores() {
+            let filtered = stores;
             
-            return stores.filter(store => 
-                store.name.toLowerCase().includes(searchQuery) ||
-                store.description?.toLowerCase().includes(searchQuery) ||
-                store.category.toLowerCase().includes(searchQuery)
-            );
+            // Filtrar por búsqueda
+            if (searchQuery) {
+                filtered = filtered.filter(store => 
+                    store.name.toLowerCase().includes(searchQuery) ||
+                    (store.description && store.description.toLowerCase().includes(searchQuery)) ||
+                    store.category.toLowerCase().includes(searchQuery)
+                );
+            }
+            
+            // Ordenar
+            return sortStores(filtered);
         }
 
-        function filterProducts() {
-            if (!searchQuery) return products;
+        function sortStores(storesList) {
+            const sorted = [...storesList];
             
-            return products.filter(product =>
-                product.name.toLowerCase().includes(searchQuery) ||
-                product.description?.toLowerCase().includes(searchQuery) ||
-                product.category.toLowerCase().includes(searchQuery)
-            );
+            switch(sortBy) {
+                case 'price_asc':
+                    return sorted.sort((a, b) => a.deliveryFee - b.deliveryFee);
+                case 'price_desc':
+                    return sorted.sort((a, b) => b.deliveryFee - a.deliveryFee);
+                case 'name_asc':
+                    return sorted.sort((a, b) => a.name.localeCompare(b.name));
+                case 'name_desc':
+                    return sorted.sort((a, b) => b.name.localeCompare(a.name));
+                case 'rating':
+                    return sorted.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+                case 'delivery_time':
+                    return sorted.sort((a, b) => {
+                        const aMin = parseInt(a.deliveryTime) || 999;
+                        const bMin = parseInt(b.deliveryTime) || 999;
+                        return aMin - bMin;
+                    });
+                case 'newest':
+                    return sorted.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                default:
+                    return sorted;
+            }
+        }
+
+        function getFilteredProducts() {
+            let filtered = products;
+            
+            // Filtrar por categoría
+            if (selectedCategory !== 'all') {
+                filtered = filtered.filter(p => p.category === selectedCategory);
+            }
+            
+            // Filtrar por búsqueda
+            if (searchQuery) {
+                filtered = filtered.filter(product =>
+                    product.name.toLowerCase().includes(searchQuery) ||
+                    (product.description && product.description.toLowerCase().includes(searchQuery)) ||
+                    product.category.toLowerCase().includes(searchQuery)
+                );
+            }
+            
+            // Ordenar
+            return sortProducts(filtered);
+        }
+
+        function sortProducts(productsList) {
+            const sorted = [...productsList];
+            
+            switch(sortBy) {
+                case 'price_asc':
+                    return sorted.sort((a, b) => a.price - b.price);
+                case 'price_desc':
+                    return sorted.sort((a, b) => b.price - a.price);
+                case 'name_asc':
+                    return sorted.sort((a, b) => a.name.localeCompare(b.name));
+                case 'name_desc':
+                    return sorted.sort((a, b) => b.name.localeCompare(a.name));
+                case 'newest':
+                    return sorted.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                default:
+                    return sorted;
+            }
         }
 
         async function cleanOldImages() {
-            if (!confirm('¿Eliminar todas las imágenes antiguas (rutas /uploads/)?\n\nEsto NO borra las tiendas ni productos, solo limpia las referencias a imágenes locales.')) {
+            if (!confirm('¿Eliminar todas las imágenes antiguas?\n\nEsto NO borra tiendas ni productos.')) {
                 return;
             }
 
             try {
                 const data = await apiCall('/admin/clean-images', 'POST');
-                alert(`✅ Limpieza completada!\n\nTiendas actualizadas: ${data.storesUpdated}\nProductos actualizados: ${data.productsUpdated}`);
-                
-                // Recargar datos
+                alert(`✅ Limpieza completada!\n\nTiendas: ${data.storesUpdated}\nProductos: ${data.productsUpdated}`);
                 await loadStores();
                 if (selectedStore) {
                     await loadStoreProducts(selectedStore.id);
                 }
             } catch (error) {
-                console.error('Error limpiando imágenes:', error);
-                alert('❌ Error al limpiar imágenes. Verifica que seas admin.');
+                console.error('Error limpiando:', error);
+                alert('❌ Error: ' + error.message);
             }
         }
 
@@ -278,13 +351,11 @@
                                 </div>
                             </div>
                             
-                            <!-- Carrito -->
                             <div class="flex items-center gap-4">
                                 ${user.role === 'admin' ? `
                                     <button 
                                         onclick="cleanOldImages()"
                                         class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition text-sm"
-                                        title="Limpiar imágenes antiguas"
                                     >
                                         🧹 Limpiar
                                     </button>
@@ -311,7 +382,7 @@
                         <!-- Navegación -->
                         <div class="flex gap-2 mt-4">
                             <button 
-                                onclick="currentView = 'stores'; selectedStore = null; searchQuery = ''; render();"
+                                onclick="currentView = 'stores'; selectedStore = null; searchQuery = ''; sortBy = 'default'; render();"
                                 class="px-4 py-2 rounded-lg font-semibold transition ${currentView === 'stores' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}"
                             >
                                 🏪 Tiendas
@@ -324,9 +395,10 @@
                             </button>
                         </div>
 
-                        <!-- Buscador -->
+                        <!-- Buscador y Filtros -->
                         ${currentView === 'stores' || currentView === 'products' ? `
-                            <div class="mt-4">
+                            <div class="mt-4 space-y-3">
+                                <!-- Buscador -->
                                 <div class="relative">
                                     <input 
                                         type="text" 
@@ -335,9 +407,6 @@
                                         oninput="handleSearch(event)"
                                         class="w-full px-4 py-3 pl-10 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none transition"
                                     />
-                                    <div class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-xl">
-                                        🔍
-                                    </div>
                                     ${searchQuery ? `
                                         <button 
                                             onclick="searchQuery = ''; render();"
@@ -346,6 +415,25 @@
                                             ✕
                                         </button>
                                     ` : ''}
+                                </div>
+
+                                <!-- Ordenar -->
+                                <div class="flex gap-2 overflow-x-auto pb-2">
+                                    <select 
+                                        onchange="sortBy = this.value; render();"
+                                        class="px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none text-sm font-medium"
+                                    >
+                                        <option value="default" ${sortBy === 'default' ? 'selected' : ''}>📊 Ordenar por...</option>
+                                        <option value="price_asc" ${sortBy === 'price_asc' ? 'selected' : ''}>💰 Más barato</option>
+                                        <option value="price_desc" ${sortBy === 'price_desc' ? 'selected' : ''}>💎 Más caro</option>
+                                        <option value="name_asc" ${sortBy === 'name_asc' ? 'selected' : ''}>🔤 A-Z</option>
+                                        <option value="name_desc" ${sortBy === 'name_desc' ? 'selected' : ''}>🔤 Z-A</option>
+                                        ${currentView === 'stores' ? `
+                                            <option value="rating" ${sortBy === 'rating' ? 'selected' : ''}>⭐ Mejor calificados</option>
+                                            <option value="delivery_time" ${sortBy === 'delivery_time' ? 'selected' : ''}>⚡ Entrega rápida</option>
+                                        ` : ''}
+                                        <option value="newest" ${sortBy === 'newest' ? 'selected' : ''}>🆕 Más recientes</option>
+                                    </select>
                                 </div>
                             </div>
                         ` : ''}
@@ -363,14 +451,14 @@
         }
 
         function renderStores() {
-            const filteredStores = filterStores();
+            const filteredStores = getFilteredStores();
             
             return `
                 <div class="mb-6">
                     <div class="flex justify-between items-center mb-4">
                         <h2 class="text-3xl font-bold text-gray-800">
                             Tiendas Disponibles 
-                            ${searchQuery ? `<span class="text-blue-600">(${filteredStores.length})</span>` : ''}
+                            ${searchQuery || sortBy !== 'default' ? `<span class="text-blue-600">(${filteredStores.length})</span>` : ''}
                         </h2>
                     </div>
 
@@ -380,7 +468,7 @@
                             <p class="text-gray-600 text-lg mb-2">No se encontraron tiendas</p>
                             <p class="text-gray-500">Intenta con otro término de búsqueda</p>
                             <button 
-                                onclick="searchQuery = ''; render();"
+                                onclick="searchQuery = ''; sortBy = 'default'; render();"
                                 class="mt-4 bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition"
                             >
                                 Ver todas las tiendas
@@ -389,50 +477,50 @@
                     ` : `
                         <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                             ${filteredStores.map(store => `
-                            <div 
-                                onclick="loadStoreProducts(${store.id})"
-                                class="bg-white rounded-xl shadow-lg overflow-hidden cursor-pointer hover:shadow-xl transition transform hover:-translate-y-1"
-                            >
-                                <div class="relative h-48 ${store.image ? '' : 'bg-gradient-to-br from-blue-400 to-purple-500'}">
-                                    ${store.image ? `
-                                        <img 
-                                            src="${store.image}" 
-                                            alt="${store.name}"
-                                            class="w-full h-full object-cover"
-                                        />
-                                    ` : `
-                                        <div class="absolute inset-0 flex items-center justify-center text-white text-6xl">
-                                            🍽️
+                                <div 
+                                    onclick="loadStoreProducts(${store.id})"
+                                    class="bg-white rounded-xl shadow-lg overflow-hidden cursor-pointer hover:shadow-xl transition transform hover:-translate-y-1"
+                                >
+                                    <div class="relative h-48 ${store.image ? '' : 'bg-gradient-to-br from-blue-400 to-purple-500'}">
+                                        ${store.image ? `
+                                            <img 
+                                                src="${store.image}" 
+                                                alt="${store.name}"
+                                                class="w-full h-full object-cover"
+                                            />
+                                        ` : `
+                                            <div class="absolute inset-0 flex items-center justify-center text-white text-6xl">
+                                                🍽️
+                                            </div>
+                                        `}
+                                        ${!store.isOpen ? `
+                                            <div class="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+                                                <span class="text-white text-xl font-bold">CERRADO</span>
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                    
+                                    <div class="p-4">
+                                        <h3 class="text-xl font-bold text-gray-800 mb-2">${store.name}</h3>
+                                        <p class="text-gray-600 text-sm mb-3">${store.description}</p>
+                                        
+                                        <div class="flex items-center gap-2 mb-2 text-sm">
+                                            <span class="bg-blue-100 text-blue-700 px-2 py-1 rounded">${store.category}</span>
+                                            <span class="text-yellow-500">⭐ ${store.rating}</span>
                                         </div>
-                                    `}
-                                    ${!store.isOpen ? `
-                                        <div class="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-                                            <span class="text-white text-xl font-bold">CERRADO</span>
+                                        
+                                        <div class="flex items-center justify-between text-sm text-gray-600">
+                                            <span>🕐 ${store.deliveryTime}</span>
+                                            <span>💵 Min: ${formatCurrency(store.minOrder)}</span>
                                         </div>
-                                    ` : ''}
-                                </div>
-                                
-                                <div class="p-4">
-                                    <h3 class="text-xl font-bold text-gray-800 mb-2">${store.name}</h3>
-                                    <p class="text-gray-600 text-sm mb-3">${store.description}</p>
-                                    
-                                    <div class="flex items-center gap-2 mb-2 text-sm">
-                                        <span class="bg-blue-100 text-blue-700 px-2 py-1 rounded">${store.category}</span>
-                                        <span class="text-yellow-500">⭐ ${store.rating}</span>
-                                    </div>
-                                    
-                                    <div class="flex items-center justify-between text-sm text-gray-600">
-                                        <span>🕐 ${store.deliveryTime}</span>
-                                        <span>💵 Min: ${formatCurrency(store.minOrder)}</span>
-                                    </div>
-                                    
-                                    <div class="mt-3 text-sm font-semibold text-gray-700">
-                                        Envío: ${formatCurrency(store.deliveryFee)}
+                                        
+                                        <div class="mt-3 text-sm font-semibold text-gray-700">
+                                            Envío: ${formatCurrency(store.deliveryFee)}
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        `).join('')}
-                    </div>
+                            `).join('')}
+                        </div>
                     `}
                 </div>
             `;
@@ -442,24 +530,12 @@
             if (!selectedStore) return '';
             
             const categories = [...new Set(products.map(p => p.category))];
-            
-            // Aplicar filtros de categoría Y búsqueda
-            let filteredProducts = selectedCategory === 'all' 
-                ? products 
-                : products.filter(p => p.category === selectedCategory);
-            
-            filteredProducts = searchQuery 
-                ? filteredProducts.filter(p =>
-                    p.name.toLowerCase().includes(searchQuery) ||
-                    p.description?.toLowerCase().includes(searchQuery) ||
-                    p.category.toLowerCase().includes(searchQuery)
-                  )
-                : filteredProducts;
+            const filteredProducts = getFilteredProducts();
             
             return `
                 <div class="mb-4">
                     <button 
-                        onclick="currentView = 'stores'; selectedStore = null; render();"
+                        onclick="currentView = 'stores'; selectedStore = null; searchQuery = ''; sortBy = 'default'; render();"
                         class="text-blue-600 hover:text-blue-700 font-semibold mb-4 inline-flex items-center"
                     >
                         ← Volver a tiendas
@@ -508,10 +584,10 @@
                         <div class="bg-white rounded-xl shadow-lg p-12 text-center">
                             <div class="text-6xl mb-4">🔍</div>
                             <p class="text-gray-600 text-lg mb-2">No se encontraron productos</p>
-                            <p class="text-gray-500 mb-4">Intenta con otro término de búsqueda${selectedCategory !== 'all' ? ' o cambia de categoría' : ''}</p>
-                            ${searchQuery || selectedCategory !== 'all' ? `
+                            <p class="text-gray-500 mb-4">Intenta con otro término${selectedCategory !== 'all' ? ' o cambia de categoría' : ''}</p>
+                            ${searchQuery || selectedCategory !== 'all' || sortBy !== 'default' ? `
                                 <button 
-                                    onclick="searchQuery = ''; selectedCategory = 'all'; render();"
+                                    onclick="searchQuery = ''; selectedCategory = 'all'; sortBy = 'default'; render();"
                                     class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition"
                                 >
                                     Ver todos los productos
@@ -521,36 +597,36 @@
                     ` : `
                         <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                             ${filteredProducts.map(product => `
-                            <div class="bg-white rounded-xl shadow-lg overflow-hidden">
-                                ${product.image ? `
-                                    <img 
-                                        src="${product.image}" 
-                                        alt="${product.name}"
-                                        class="w-full h-48 object-cover"
-                                    />
-                                ` : `
-                                    <div class="h-48 bg-gradient-to-br from-orange-400 to-pink-500 flex items-center justify-center text-white text-6xl">
-                                        🍕
-                                    </div>
-                                `}
-                                
-                                <div class="p-4">
-                                    <h3 class="text-lg font-bold text-gray-800 mb-1">${product.name}</h3>
-                                    <p class="text-gray-600 text-sm mb-3">${product.description}</p>
+                                <div class="bg-white rounded-xl shadow-lg overflow-hidden">
+                                    ${product.image ? `
+                                        <img 
+                                            src="${product.image}" 
+                                            alt="${product.name}"
+                                            class="w-full h-48 object-cover"
+                                        />
+                                    ` : `
+                                        <div class="h-48 bg-gradient-to-br from-orange-400 to-pink-500 flex items-center justify-center text-white text-6xl">
+                                            🍕
+                                        </div>
+                                    `}
                                     
-                                    <div class="flex items-center justify-between">
-                                        <div class="text-2xl font-bold text-gray-800">${formatCurrency(product.price)}</div>
-                                        <button 
-                                            onclick='addToCart(${JSON.stringify(product)})'
-                                            class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold transition"
-                                        >
-                                            Agregar
-                                        </button>
+                                    <div class="p-4">
+                                        <h3 class="text-lg font-bold text-gray-800 mb-1">${product.name}</h3>
+                                        <p class="text-gray-600 text-sm mb-3">${product.description}</p>
+                                        
+                                        <div class="flex items-center justify-between">
+                                            <div class="text-2xl font-bold text-gray-800">${formatCurrency(product.price)}</div>
+                                            <button 
+                                                onclick='addToCart(${JSON.stringify(product)})'
+                                                class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold transition"
+                                            >
+                                                Agregar
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        `).join('')}
-                    </div>
+                            `).join('')}
+                        </div>
                     `}
                 </div>
             `;
@@ -564,143 +640,137 @@
             const minOrder = selectedStore ? selectedStore.minOrder : 50;
             
             return `
-                <div class="max-w-4xl mx-auto">
-                    <h2 class="text-3xl font-bold text-gray-800 mb-6">🛒 Tu Carrito</h2>
+                <div class="max-w-6xl mx-auto">
+                    <h2 class="text-3xl font-bold text-gray-800 mb-6">🛒 Mi Carrito</h2>
                     
                     ${cart.length === 0 ? `
                         <div class="bg-white rounded-xl shadow-lg p-12 text-center">
                             <div class="text-6xl mb-4">🛒</div>
-                            <p class="text-gray-600 text-lg mb-4">Tu carrito está vacío</p>
+                            <p class="text-gray-600 text-lg mb-2">Tu carrito está vacío</p>
                             <button 
                                 onclick="currentView = 'stores'; render();"
-                                class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition"
+                                class="mt-4 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition"
                             >
-                                Ver Tiendas
+                                Ver tiendas
                             </button>
                         </div>
                     ` : `
-                        <div class="grid md:grid-cols-3 gap-6">
-                            <!-- Items del carrito -->
-                            <div class="md:col-span-2 space-y-4">
-                                ${selectedStore ? `
-                                    <div class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-lg">
-                                        <div class="font-semibold text-blue-900">Pedido de: ${selectedStore.name}</div>
-                                        <div class="text-sm text-blue-700">Pedido mínimo: ${formatCurrency(minOrder)}</div>
-                                    </div>
-                                ` : ''}
-                                
+                        <div class="grid lg:grid-cols-3 gap-6">
+                            <!-- Items -->
+                            <div class="lg:col-span-2 space-y-4">
                                 ${cart.map(item => `
-                                    <div class="bg-white rounded-xl shadow-lg p-4 flex items-center gap-4">
-                                        <div class="w-20 h-20 bg-gradient-to-br from-orange-400 to-pink-500 rounded-lg flex items-center justify-center text-white text-3xl">
-                                            🍕
-                                        </div>
+                                    <div class="bg-white rounded-xl shadow-lg p-4 flex gap-4">
+                                        ${item.image ? `
+                                            <img src="${item.image}" class="w-24 h-24 object-cover rounded-lg" />
+                                        ` : `
+                                            <div class="w-24 h-24 bg-gradient-to-br from-orange-400 to-pink-500 rounded-lg flex items-center justify-center text-3xl">
+                                                🍕
+                                            </div>
+                                        `}
                                         
                                         <div class="flex-1">
                                             <h3 class="font-bold text-gray-800">${item.name}</h3>
-                                            <p class="text-gray-600 text-sm">${formatCurrency(item.price)} c/u</p>
+                                            <p class="text-gray-600">${formatCurrency(item.price)}</p>
+                                            
+                                            <div class="flex items-center gap-3 mt-2">
+                                                <button 
+                                                    onclick="updateCartQuantity(${item.productId}, -1)"
+                                                    class="bg-gray-200 hover:bg-gray-300 w-8 h-8 rounded-lg font-bold"
+                                                >
+                                                    -
+                                                </button>
+                                                <span class="font-bold">${item.quantity}</span>
+                                                <button 
+                                                    onclick="updateCartQuantity(${item.productId}, 1)"
+                                                    class="bg-gray-200 hover:bg-gray-300 w-8 h-8 rounded-lg font-bold"
+                                                >
+                                                    +
+                                                </button>
+                                                <button 
+                                                    onclick="removeFromCart(${item.productId})"
+                                                    class="ml-auto text-red-600 hover:text-red-700"
+                                                >
+                                                    🗑️
+                                                </button>
+                                            </div>
                                         </div>
                                         
-                                        <div class="flex items-center gap-2">
-                                            <button 
-                                                onclick="updateCartQuantity(${item.productId}, -1)"
-                                                class="bg-gray-200 hover:bg-gray-300 w-8 h-8 rounded flex items-center justify-center font-bold"
-                                            >
-                                                -
-                                            </button>
-                                            <span class="w-8 text-center font-semibold">${item.quantity}</span>
-                                            <button 
-                                                onclick="updateCartQuantity(${item.productId}, 1)"
-                                                class="bg-gray-200 hover:bg-gray-300 w-8 h-8 rounded flex items-center justify-center font-bold"
-                                            >
-                                                +
-                                            </button>
+                                        <div class="text-right">
+                                            <div class="font-bold text-lg">${formatCurrency(item.price * item.quantity)}</div>
                                         </div>
-                                        
-                                        <div class="font-bold text-gray-800 w-24 text-right">
-                                            ${formatCurrency(item.price * item.quantity)}
-                                        </div>
-                                        
-                                        <button 
-                                            onclick="removeFromCart(${item.productId})"
-                                            class="text-red-500 hover:text-red-700"
-                                        >
-                                            🗑️
-                                        </button>
                                     </div>
                                 `).join('')}
                             </div>
                             
-                            <!-- Resumen y checkout -->
-                            <div class="space-y-4">
-                                <div class="bg-white rounded-xl shadow-lg p-6">
-                                    <h3 class="text-xl font-bold text-gray-800 mb-4">Resumen</h3>
-                                    
-                                    <div class="space-y-2 mb-4">
-                                        <div class="flex justify-between text-gray-600">
-                                            <span>Subtotal</span>
-                                            <span>${formatCurrency(subtotal)}</span>
-                                        </div>
-                                        <div class="flex justify-between text-gray-600">
-                                            <span>Envío</span>
-                                            <span>${formatCurrency(deliveryFee)}</span>
-                                        </div>
-                                        <div class="flex justify-between text-gray-600">
-                                            <span>Servicio</span>
-                                            <span>${formatCurrency(serviceFee)}</span>
-                                        </div>
-                                        <div class="border-t pt-2 flex justify-between font-bold text-lg text-gray-800">
-                                            <span>Total</span>
-                                            <span>${formatCurrency(total)}</span>
-                                        </div>
+                            <!-- Resumen -->
+                            <div class="bg-white rounded-xl shadow-lg p-6 h-fit sticky top-24">
+                                <h3 class="text-xl font-bold text-gray-800 mb-4">Resumen</h3>
+                                
+                                <div class="space-y-2 mb-4">
+                                    <div class="flex justify-between text-gray-600">
+                                        <span>Subtotal</span>
+                                        <span>${formatCurrency(subtotal)}</span>
+                                    </div>
+                                    <div class="flex justify-between text-gray-600">
+                                        <span>Envío</span>
+                                        <span>${formatCurrency(deliveryFee)}</span>
+                                    </div>
+                                    <div class="flex justify-between text-gray-600">
+                                        <span>Servicio</span>
+                                        <span>${formatCurrency(serviceFee)}</span>
+                                    </div>
+                                    <div class="border-t pt-2 flex justify-between font-bold text-lg text-gray-800">
+                                        <span>Total</span>
+                                        <span>${formatCurrency(total)}</span>
+                                    </div>
+                                </div>
+                                
+                                ${subtotal < minOrder ? `
+                                    <div class="bg-yellow-50 border border-yellow-200 text-yellow-800 p-3 rounded-lg text-sm mb-4">
+                                        ⚠️ Falta ${formatCurrency(minOrder - subtotal)} para el mínimo
+                                    </div>
+                                ` : ''}
+                                
+                                <form onsubmit="createOrder(event)" class="space-y-3">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Dirección</label>
+                                        <input 
+                                            type="text" 
+                                            name="address"
+                                            placeholder="Calle, número, colonia"
+                                            value="${user.address || ''}"
+                                            class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
+                                            required
+                                        />
                                     </div>
                                     
-                                    ${subtotal < minOrder ? `
-                                        <div class="bg-yellow-50 border border-yellow-200 text-yellow-800 p-3 rounded-lg text-sm mb-4">
-                                            ⚠️ Falta ${formatCurrency(minOrder - subtotal)} para el mínimo
-                                        </div>
-                                    ` : ''}
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Pago</label>
+                                        <select name="paymentMethod" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm">
+                                            <option value="cash">Efectivo</option>
+                                            <option value="card">Tarjeta</option>
+                                            <option value="wallet">Monedero</option>
+                                        </select>
+                                    </div>
                                     
-                                    <form onsubmit="createOrder(event)" class="space-y-3">
-                                        <div>
-                                            <label class="block text-sm font-medium text-gray-700 mb-1">Dirección</label>
-                                            <input 
-                                                type="text" 
-                                                name="address"
-                                                placeholder="Calle, número, colonia"
-                                                value="${user.address || ''}"
-                                                class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
-                                                required
-                                            />
-                                        </div>
-                                        
-                                        <div>
-                                            <label class="block text-sm font-medium text-gray-700 mb-1">Pago</label>
-                                            <select name="paymentMethod" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm">
-                                                <option value="cash">Efectivo</option>
-                                                <option value="card">Tarjeta</option>
-                                                <option value="wallet">Monedero</option>
-                                            </select>
-                                        </div>
-                                        
-                                        <div>
-                                            <label class="block text-sm font-medium text-gray-700 mb-1">Notas</label>
-                                            <textarea 
-                                                name="notes"
-                                                placeholder="Instrucciones especiales..."
-                                                class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
-                                                rows="2"
-                                            ></textarea>
-                                        </div>
-                                        
-                                        <button 
-                                            type="submit"
-                                            ${subtotal < minOrder ? 'disabled' : ''}
-                                            class="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-bold py-3 rounded-lg transition"
-                                        >
-                                            Confirmar Pedido
-                                        </button>
-                                    </form>
-                                </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Notas</label>
+                                        <textarea 
+                                            name="notes"
+                                            placeholder="Instrucciones especiales..."
+                                            class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
+                                            rows="2"
+                                        ></textarea>
+                                    </div>
+                                    
+                                    <button 
+                                        type="submit"
+                                        ${subtotal < minOrder ? 'disabled' : ''}
+                                        class="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-bold py-3 rounded-lg transition"
+                                    >
+                                        Confirmar Pedido
+                                    </button>
+                                </form>
                             </div>
                         </div>
                     `}
