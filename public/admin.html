@@ -6,6 +6,8 @@
     <title>Panel Admin - Delivery</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+    <!-- Librería para exportar a Excel -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
 </head>
 <body class="bg-gray-100 min-h-screen">
     <div id="root"></div>
@@ -16,6 +18,10 @@
         let token = localStorage.getItem('token');
         let stats = null;
         let pendingDrivers = [];
+        let allDrivers = [];
+        let allClients = [];
+        let allStores = [];
+        let currentTab = 'dashboard'; // dashboard, drivers, clients, stores
 
         if (!token) {
             window.location.href = '/';
@@ -46,6 +52,90 @@
             }
         }
 
+        // ============================================
+        // FUNCIONES DE EXPORTACIÓN A EXCEL
+        // ============================================
+        function exportToExcel(data, filename, sheetName) {
+            try {
+                const worksheet = XLSX.utils.json_to_sheet(data);
+                const workbook = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+                XLSX.writeFile(workbook, `${filename}_${new Date().toISOString().split('T')[0]}.xlsx`);
+                alert('✅ Excel exportado exitosamente!');
+            } catch (error) {
+                console.error('Error exportando:', error);
+                alert('❌ Error al exportar: ' + error.message);
+            }
+        }
+
+        function exportDriversToExcel() {
+            if (allDrivers.length === 0) {
+                alert('No hay conductores para exportar');
+                return;
+            }
+
+            const data = allDrivers.map(d => ({
+                'ID': d.id,
+                'Nombre': d.name,
+                'Email': d.email,
+                'Teléfono': d.phone,
+                'Vehículo': d.vehicle || 'N/A',
+                'Licencia': d.license || 'N/A',
+                'Aprobado': d.approved ? 'Sí' : 'No',
+                'Disponible': d.available ? 'Sí' : 'No',
+                'Total Entregas': d.totalDeliveries || 0,
+                'Ganancias Totales': d.totalEarnings || 0,
+                'Balance': d.balance || 0,
+                'Rating': d.rating || 0,
+                'Fecha Registro': new Date(d.createdAt).toLocaleDateString('es-MX')
+            }));
+
+            exportToExcel(data, 'conductores', 'Conductores');
+        }
+
+        function exportClientsToExcel() {
+            if (allClients.length === 0) {
+                alert('No hay clientes para exportar');
+                return;
+            }
+
+            const data = allClients.map(c => ({
+                'ID': c.id,
+                'Nombre': c.name,
+                'Email': c.email,
+                'Teléfono': c.phone,
+                'Dirección': c.address || 'N/A',
+                'Fecha Registro': new Date(c.createdAt).toLocaleDateString('es-MX')
+            }));
+
+            exportToExcel(data, 'clientes', 'Clientes');
+        }
+
+        function exportStoresToExcel() {
+            if (allStores.length === 0) {
+                alert('No hay tiendas para exportar');
+                return;
+            }
+
+            const data = allStores.map(s => ({
+                'ID Tienda': s.id,
+                'Nombre Tienda': s.name,
+                'Descripción': s.description || 'N/A',
+                'Categoría': s.category || 'N/A',
+                'Dirección': s.address || 'N/A',
+                'Teléfono': s.phone || 'N/A',
+                'Propietario': s.owner ? s.owner.name : 'N/A',
+                'Email Propietario': s.owner ? s.owner.email : 'N/A',
+                'Teléfono Propietario': s.owner ? s.owner.phone : 'N/A',
+                'Fecha Registro': new Date(s.createdAt).toLocaleDateString('es-MX')
+            }));
+
+            exportToExcel(data, 'tiendas', 'Tiendas');
+        }
+
+        // ============================================
+        // FUNCIONES DE CARGA DE DATOS
+        // ============================================
         async function cleanOldImages() {
             if (!confirm('¿Eliminar todas las imágenes antiguas (rutas /uploads/)?\n\nEsto NO borra las tiendas ni productos.')) {
                 return;
@@ -81,12 +171,48 @@
         async function loadPendingDrivers() {
             try {
                 const data = await apiCall('/drivers');
-                const allDrivers = data.drivers || [];
-                pendingDrivers = allDrivers.filter(d => !d.approved);
+                const allDriversData = data.drivers || [];
+                pendingDrivers = allDriversData.filter(d => !d.approved);
                 render();
             } catch (error) {
                 console.error('Error cargando conductores:', error);
                 pendingDrivers = [];
+                render();
+            }
+        }
+
+        async function loadAllDrivers() {
+            try {
+                const data = await apiCall('/drivers');
+                allDrivers = data.drivers || [];
+                render();
+            } catch (error) {
+                console.error('Error cargando conductores:', error);
+                allDrivers = [];
+                render();
+            }
+        }
+
+        async function loadAllClients() {
+            try {
+                const data = await apiCall('/clients');
+                allClients = data.clients || [];
+                render();
+            } catch (error) {
+                console.error('Error cargando clientes:', error);
+                allClients = [];
+                render();
+            }
+        }
+
+        async function loadAllStores() {
+            try {
+                const data = await apiCall('/admin/stores');
+                allStores = data.stores || [];
+                render();
+            } catch (error) {
+                console.error('Error cargando tiendas:', error);
+                allStores = [];
                 render();
             }
         }
@@ -132,6 +258,20 @@
             }).format(amount || 0);
         }
 
+        function changeTab(tab) {
+            currentTab = tab;
+            
+            if (tab === 'drivers' && allDrivers.length === 0) {
+                loadAllDrivers();
+            } else if (tab === 'clients' && allClients.length === 0) {
+                loadAllClients();
+            } else if (tab === 'stores' && allStores.length === 0) {
+                loadAllStores();
+            } else {
+                render();
+            }
+        }
+
         function render() {
             const root = document.getElementById('root');
             
@@ -165,105 +305,349 @@
                         </div>
                     </div>
 
-                    <!-- Estadísticas Generales -->
-                    <div class="grid md:grid-cols-4 gap-6 mb-6">
-                        <div class="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg p-6 text-white">
-                            <div class="text-sm opacity-80">Total Tiendas</div>
-                            <div class="text-3xl font-bold mt-2">${stats?.totalStores || 0}</div>
-                        </div>
-                        <div class="bg-gradient-to-br from-green-500 to-green-600 rounded-lg shadow-lg p-6 text-white">
-                            <div class="text-sm opacity-80">Total Productos</div>
-                            <div class="text-3xl font-bold mt-2">${stats?.totalProducts || 0}</div>
-                        </div>
-                        <div class="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow-lg p-6 text-white">
-                            <div class="text-sm opacity-80">Total Pedidos</div>
-                            <div class="text-3xl font-bold mt-2">${stats?.totalOrders || 0}</div>
-                        </div>
-                        <div class="bg-gradient-to-br from-yellow-500 to-yellow-600 rounded-lg shadow-lg p-6 text-white">
-                            <div class="text-sm opacity-80">Pedidos Activos</div>
-                            <div class="text-3xl font-bold mt-2">${stats?.activeOrders || 0}</div>
+                    <!-- Tabs -->
+                    <div class="bg-white rounded-xl shadow-lg mb-6 overflow-hidden">
+                        <div class="flex border-b">
+                            <button 
+                                onclick="changeTab('dashboard')"
+                                class="flex-1 px-6 py-4 font-semibold transition ${currentTab === 'dashboard' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}"
+                            >
+                                📊 Dashboard
+                            </button>
+                            <button 
+                                onclick="changeTab('drivers')"
+                                class="flex-1 px-6 py-4 font-semibold transition ${currentTab === 'drivers' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}"
+                            >
+                                🚗 Conductores (${allDrivers.length})
+                            </button>
+                            <button 
+                                onclick="changeTab('clients')"
+                                class="flex-1 px-6 py-4 font-semibold transition ${currentTab === 'clients' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}"
+                            >
+                                👥 Clientes (${allClients.length})
+                            </button>
+                            <button 
+                                onclick="changeTab('stores')"
+                                class="flex-1 px-6 py-4 font-semibold transition ${currentTab === 'stores' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}"
+                            >
+                                🏪 Tiendas (${allStores.length})
+                            </button>
                         </div>
                     </div>
 
-                    <!-- Conductores Pendientes -->
-                    ${pendingDrivers && pendingDrivers.length > 0 ? `
-                        <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
-                            <h2 class="text-2xl font-bold text-gray-800 mb-4">
-                                🚗 Conductores Pendientes de Aprobación (${pendingDrivers.length})
-                            </h2>
-                            
-                            <div class="grid md:grid-cols-2 gap-6">
-                                ${pendingDrivers.map(driver => `
-                                    <div class="border rounded-lg p-4 bg-yellow-50 border-yellow-200">
-                                        <div class="flex justify-between items-start mb-3">
-                                            <div>
-                                                <h3 class="font-bold text-lg text-gray-800">${driver.name}</h3>
-                                                <p class="text-sm text-gray-600">${driver.email}</p>
-                                                <p class="text-sm text-gray-600">📱 ${driver.phone}</p>
-                                            </div>
-                                            <span class="px-3 py-1 rounded text-xs font-semibold bg-yellow-200 text-yellow-800">
-                                                ⏳ Pendiente
-                                            </span>
-                                        </div>
-                                        
-                                        <div class="space-y-2 text-sm mb-4">
-                                            <div><strong>Vehículo:</strong> ${driver.vehicle || 'No especificado'}</div>
-                                            <div><strong>Licencia:</strong> ${driver.license || 'No especificada'}</div>
-                                            <div><strong>Registro:</strong> ${new Date(driver.createdAt).toLocaleDateString('es-MX')}</div>
-                                        </div>
+                    ${renderTabContent()}
+                </div>
+            `;
+        }
 
-                                        ${driver.inePhoto || driver.vehiclePhoto ? `
-                                            <div class="grid grid-cols-2 gap-2 mb-4">
-                                                ${driver.inePhoto ? `
-                                                    <div>
-                                                        <p class="text-xs text-gray-600 mb-1">INE:</p>
-                                                        <img src="${driver.inePhoto}" alt="INE" class="w-full h-24 object-cover rounded border">
-                                                    </div>
-                                                ` : ''}
-                                                ${driver.vehiclePhoto ? `
-                                                    <div>
-                                                        <p class="text-xs text-gray-600 mb-1">Vehículo:</p>
-                                                        <img src="${driver.vehiclePhoto}" alt="Vehículo" class="w-full h-24 object-cover rounded border">
-                                                    </div>
-                                                ` : ''}
-                                            </div>
-                                        ` : ''}
-                                        
-                                        <div class="grid grid-cols-2 gap-3">
-                                            <button 
-                                                onclick="approveDriver(${driver.id})"
-                                                class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold transition"
-                                            >
-                                                ✓ Aprobar
-                                            </button>
-                                            <button 
-                                                onclick="rejectDriver(${driver.id})"
-                                                class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-semibold transition"
-                                            >
-                                                ✗ Rechazar
-                                            </button>
+        function renderTabContent() {
+            switch(currentTab) {
+                case 'dashboard':
+                    return renderDashboard();
+                case 'drivers':
+                    return renderDrivers();
+                case 'clients':
+                    return renderClients();
+                case 'stores':
+                    return renderStores();
+                default:
+                    return renderDashboard();
+            }
+        }
+
+        function renderDashboard() {
+            return `
+                <!-- Estadísticas Generales -->
+                <div class="grid md:grid-cols-4 gap-6 mb-6">
+                    <div class="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg p-6 text-white">
+                        <div class="text-sm opacity-80">Total Tiendas</div>
+                        <div class="text-3xl font-bold mt-2">${stats?.totalStores || 0}</div>
+                    </div>
+                    <div class="bg-gradient-to-br from-green-500 to-green-600 rounded-lg shadow-lg p-6 text-white">
+                        <div class="text-sm opacity-80">Total Productos</div>
+                        <div class="text-3xl font-bold mt-2">${stats?.totalProducts || 0}</div>
+                    </div>
+                    <div class="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow-lg p-6 text-white">
+                        <div class="text-sm opacity-80">Total Pedidos</div>
+                        <div class="text-3xl font-bold mt-2">${stats?.totalOrders || 0}</div>
+                    </div>
+                    <div class="bg-gradient-to-br from-yellow-500 to-yellow-600 rounded-lg shadow-lg p-6 text-white">
+                        <div class="text-sm opacity-80">Pedidos Activos</div>
+                        <div class="text-3xl font-bold mt-2">${stats?.activeOrders || 0}</div>
+                    </div>
+                </div>
+
+                <!-- Conductores Pendientes -->
+                ${pendingDrivers && pendingDrivers.length > 0 ? `
+                    <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-4">
+                            🚗 Conductores Pendientes de Aprobación (${pendingDrivers.length})
+                        </h2>
+                        
+                        <div class="grid md:grid-cols-2 gap-6">
+                            ${pendingDrivers.map(driver => `
+                                <div class="border rounded-lg p-4 bg-yellow-50 border-yellow-200">
+                                    <div class="flex justify-between items-start mb-3">
+                                        <div>
+                                            <h3 class="font-bold text-lg text-gray-800">${driver.name}</h3>
+                                            <p class="text-sm text-gray-600">${driver.email}</p>
+                                            <p class="text-sm text-gray-600">📱 ${driver.phone}</p>
                                         </div>
+                                        <span class="px-3 py-1 rounded text-xs font-semibold bg-yellow-200 text-yellow-800">
+                                            ⏳ Pendiente
+                                        </span>
                                     </div>
-                                `).join('')}
-                            </div>
-                        </div>
-                    ` : `
-                        <div class="bg-white rounded-xl shadow-lg p-12 text-center mb-6">
-                            <div class="text-6xl mb-4">✅</div>
-                            <h3 class="text-xl font-bold text-gray-800 mb-2">No hay conductores pendientes</h3>
-                            <p class="text-gray-600">Todos los conductores han sido procesados</p>
-                        </div>
-                    `}
+                                    
+                                    <div class="space-y-2 text-sm mb-4">
+                                        <div><strong>Vehículo:</strong> ${driver.vehicle || 'No especificado'}</div>
+                                        <div><strong>Licencia:</strong> ${driver.license || 'No especificada'}</div>
+                                        <div><strong>Registro:</strong> ${new Date(driver.createdAt).toLocaleDateString('es-MX')}</div>
+                                    </div>
 
-                    <!-- Botón de Refrescar -->
-                    <div class="text-center">
+                                    ${driver.inePhoto || driver.vehiclePhoto ? `
+                                        <div class="grid grid-cols-2 gap-2 mb-4">
+                                            ${driver.inePhoto ? `
+                                                <div>
+                                                    <p class="text-xs text-gray-600 mb-1">INE:</p>
+                                                    <img src="${driver.inePhoto}" alt="INE" class="w-full h-24 object-cover rounded border">
+                                                </div>
+                                            ` : ''}
+                                            ${driver.vehiclePhoto ? `
+                                                <div>
+                                                    <p class="text-xs text-gray-600 mb-1">Vehículo:</p>
+                                                    <img src="${driver.vehiclePhoto}" alt="Vehículo" class="w-full h-24 object-cover rounded border">
+                                                </div>
+                                            ` : ''}
+                                        </div>
+                                    ` : ''}
+                                    
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <button 
+                                            onclick="approveDriver(${driver.id})"
+                                            class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold transition"
+                                        >
+                                            ✓ Aprobar
+                                        </button>
+                                        <button 
+                                            onclick="rejectDriver(${driver.id})"
+                                            class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-semibold transition"
+                                        >
+                                            ✗ Rechazar
+                                        </button>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                ` : `
+                    <div class="bg-white rounded-xl shadow-lg p-12 text-center mb-6">
+                        <div class="text-6xl mb-4">✅</div>
+                        <h3 class="text-xl font-bold text-gray-800 mb-2">No hay conductores pendientes</h3>
+                        <p class="text-gray-600">Todos los conductores han sido procesados</p>
+                    </div>
+                `}
+
+                <!-- Botón de Refrescar -->
+                <div class="text-center">
+                    <button 
+                        onclick="loadStats(); loadPendingDrivers();" 
+                        class="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-semibold transition"
+                    >
+                        🔄 Actualizar
+                    </button>
+                </div>
+            `;
+        }
+
+        function renderDrivers() {
+            return `
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-2xl font-bold text-gray-800">
+                            🚗 Todos los Conductores (${allDrivers.length})
+                        </h2>
                         <button 
-                            onclick="loadStats(); loadPendingDrivers();" 
-                            class="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-semibold transition"
+                            onclick="exportDriversToExcel()"
+                            class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-semibold transition flex items-center gap-2"
                         >
-                            🔄 Actualizar
+                            📊 Exportar a Excel
                         </button>
                     </div>
+
+                    ${allDrivers.length === 0 ? `
+                        <div class="text-center py-12">
+                            <p class="text-gray-500">Cargando conductores...</p>
+                        </div>
+                    ` : `
+                        <div class="overflow-x-auto">
+                            <table class="w-full">
+                                <thead class="bg-gray-100">
+                                    <tr>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">ID</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Nombre</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Email</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Teléfono</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Vehículo</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Estado</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Entregas</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Balance</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Registro</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-200">
+                                    ${allDrivers.map(driver => `
+                                        <tr class="hover:bg-gray-50">
+                                            <td class="px-4 py-3 text-sm">${driver.id}</td>
+                                            <td class="px-4 py-3">
+                                                <div class="font-semibold text-gray-800">${driver.name}</div>
+                                            </td>
+                                            <td class="px-4 py-3 text-sm text-gray-600">${driver.email}</td>
+                                            <td class="px-4 py-3 text-sm text-gray-600">${driver.phone}</td>
+                                            <td class="px-4 py-3 text-sm text-gray-600">${driver.vehicle || 'N/A'}</td>
+                                            <td class="px-4 py-3">
+                                                <div class="space-y-1">
+                                                    <span class="px-2 py-1 rounded text-xs font-semibold ${driver.approved ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}">
+                                                        ${driver.approved ? '✓ Aprobado' : '⏳ Pendiente'}
+                                                    </span>
+                                                    ${driver.approved ? `
+                                                        <span class="px-2 py-1 rounded text-xs font-semibold ${driver.available ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}">
+                                                            ${driver.available ? '🟢 Disponible' : '⚫ No disponible'}
+                                                        </span>
+                                                    ` : ''}
+                                                </div>
+                                            </td>
+                                            <td class="px-4 py-3 text-sm font-semibold text-gray-800">${driver.totalDeliveries || 0}</td>
+                                            <td class="px-4 py-3 text-sm font-semibold text-green-600">${formatCurrency(driver.balance || 0)}</td>
+                                            <td class="px-4 py-3 text-sm text-gray-600">${new Date(driver.createdAt).toLocaleDateString('es-MX')}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    `}
+                </div>
+            `;
+        }
+
+        function renderClients() {
+            return `
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-2xl font-bold text-gray-800">
+                            👥 Todos los Clientes (${allClients.length})
+                        </h2>
+                        <button 
+                            onclick="exportClientsToExcel()"
+                            class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-semibold transition flex items-center gap-2"
+                        >
+                            📊 Exportar a Excel
+                        </button>
+                    </div>
+
+                    ${allClients.length === 0 ? `
+                        <div class="text-center py-12">
+                            <p class="text-gray-500">Cargando clientes...</p>
+                        </div>
+                    ` : `
+                        <div class="overflow-x-auto">
+                            <table class="w-full">
+                                <thead class="bg-gray-100">
+                                    <tr>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">ID</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Nombre</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Email</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Teléfono</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Dirección</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Fecha Registro</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-200">
+                                    ${allClients.map(client => `
+                                        <tr class="hover:bg-gray-50">
+                                            <td class="px-4 py-3 text-sm">${client.id}</td>
+                                            <td class="px-4 py-3">
+                                                <div class="font-semibold text-gray-800">${client.name}</div>
+                                            </td>
+                                            <td class="px-4 py-3 text-sm text-gray-600">${client.email}</td>
+                                            <td class="px-4 py-3 text-sm text-gray-600">${client.phone}</td>
+                                            <td class="px-4 py-3 text-sm text-gray-600">${client.address || 'No especificada'}</td>
+                                            <td class="px-4 py-3 text-sm text-gray-600">${new Date(client.createdAt).toLocaleDateString('es-MX')}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    `}
+                </div>
+            `;
+        }
+
+        function renderStores() {
+            return `
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-2xl font-bold text-gray-800">
+                            🏪 Todas las Tiendas (${allStores.length})
+                        </h2>
+                        <button 
+                            onclick="exportStoresToExcel()"
+                            class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-semibold transition flex items-center gap-2"
+                        >
+                            📊 Exportar a Excel
+                        </button>
+                    </div>
+
+                    ${allStores.length === 0 ? `
+                        <div class="text-center py-12">
+                            <p class="text-gray-500">Cargando tiendas...</p>
+                        </div>
+                    ` : `
+                        <div class="overflow-x-auto">
+                            <table class="w-full">
+                                <thead class="bg-gray-100">
+                                    <tr>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">ID</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Tienda</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Categoría</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Dirección</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Propietario</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Contacto</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Fecha Registro</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-200">
+                                    ${allStores.map(store => `
+                                        <tr class="hover:bg-gray-50">
+                                            <td class="px-4 py-3 text-sm">${store.id}</td>
+                                            <td class="px-4 py-3">
+                                                <div class="flex items-center gap-3">
+                                                    ${store.image ? `
+                                                        <img src="${store.image}" alt="${store.name}" class="w-12 h-12 object-cover rounded">
+                                                    ` : `
+                                                        <div class="w-12 h-12 bg-gray-200 rounded flex items-center justify-center text-2xl">
+                                                            🏪
+                                                        </div>
+                                                    `}
+                                                    <div>
+                                                        <div class="font-semibold text-gray-800">${store.name}</div>
+                                                        <div class="text-xs text-gray-500">${store.description ? store.description.substring(0, 40) + '...' : 'Sin descripción'}</div>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td class="px-4 py-3 text-sm text-gray-600">${store.category || 'General'}</td>
+                                            <td class="px-4 py-3 text-sm text-gray-600">${store.address || 'No especificada'}</td>
+                                            <td class="px-4 py-3">
+                                                <div class="font-semibold text-sm text-gray-800">${store.owner ? store.owner.name : 'N/A'}</div>
+                                                <div class="text-xs text-gray-500">${store.owner ? store.owner.email : ''}</div>
+                                            </td>
+                                            <td class="px-4 py-3 text-sm text-gray-600">${store.phone || store.owner?.phone || 'N/A'}</td>
+                                            <td class="px-4 py-3 text-sm text-gray-600">${new Date(store.createdAt).toLocaleDateString('es-MX')}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    `}
                 </div>
             `;
         }

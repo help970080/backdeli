@@ -892,86 +892,6 @@ app.put('/api/orders/:orderId/status', authenticateToken, async (req, res) => {
   }
 });
 
-// ============================================
-// ASIGNAR CONDUCTOR A PEDIDO - POST (usado por frontend)
-// ============================================
-app.post('/api/orders/:id/assign', authenticateToken, async (req, res) => {
-  try {
-    if (req.user.role !== 'driver') {
-      return res.status(403).json({ error: 'Solo conductores pueden asignarse pedidos' });
-    }
-
-    const { id } = req.params;
-    const order = await Order.findByPk(id, {
-      include: [
-        { model: Store, as: 'store' },
-        { model: User, as: 'customer' }
-      ]
-    });
-
-    if (!order) {
-      return res.status(404).json({ error: 'Pedido no encontrado' });
-    }
-
-    if (order.status !== ORDER_STATES.READY) {
-      return res.status(400).json({ 
-        error: 'Solo se pueden asignar pedidos en estado "ready"' 
-      });
-    }
-
-    if (order.driverId) {
-      return res.status(400).json({ error: 'Este pedido ya tiene un conductor asignado' });
-    }
-
-    const driver = await User.findByPk(req.user.id);
-    if (!driver.available) {
-      return res.status(400).json({ error: 'Debes estar disponible para tomar pedidos' });
-    }
-
-    await order.update({
-      driverId: req.user.id,
-      assignedAt: new Date(),
-      statusHistory: [...order.statusHistory, {
-        status: 'assigned_to_driver',
-        timestamp: new Date(),
-        note: `Asignado al conductor ${driver.name}`,
-        driverId: driver.id
-      }]
-    });
-
-    notifyUser(order.customerId, {
-      title: 'Conductor asignado',
-      message: `${driver.name} recogerá tu pedido`,
-      type: 'info',
-      orderId: order.id,
-      timestamp: new Date()
-    });
-
-    if (order.store && order.store.ownerId) {
-      notifyUser(order.store.ownerId, {
-        title: 'Conductor asignado',
-        message: `${driver.name} recogerá el pedido #${order.orderNumber}`,
-        type: 'info',
-        orderId: order.id,
-        timestamp: new Date()
-      });
-    }
-
-    io.emit('order_update', { 
-      orderId: order.id, 
-      order 
-    });
-
-    res.json({ 
-      message: 'Pedido asignado exitosamente',
-      order 
-    });
-  } catch (error) {
-    console.error('Error asignando pedido:', error);
-    res.status(500).json({ error: 'Error al asignar pedido', details: error.message });
-  }
-});
-
 app.put('/api/orders/:orderId/assign', authenticateToken, async (req, res) => {
   try {
     if (req.user.role !== 'driver') {
@@ -1059,6 +979,134 @@ app.get('/api/drivers', authenticateToken, async (req, res) => {
 });
 
 app.get('/api/drivers/available', async (req, res) => {
+
+// ============================================
+// OBTENER TODOS LOS CLIENTES (ADMIN)
+// ============================================
+app.get('/api/clients', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    const clients = await User.findAll({
+      where: { role: 'client' },
+      attributes: { exclude: ['password'] },
+      order: [['createdAt', 'DESC']]
+    });
+
+    res.json({ clients });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener clientes', details: error.message });
+  }
+});
+
+// ============================================
+// OBTENER TODAS LAS TIENDAS CON PROPIETARIOS (ADMIN)
+// ============================================
+app.get('/api/admin/stores', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    const stores = await Store.findAll({
+      include: [
+        { 
+          model: User, 
+          as: 'owner',
+          attributes: { exclude: ['password'] }
+        }
+      ],
+      order: [['createdAt', 'DESC']]
+    });
+
+    res.json({ stores });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener tiendas', details: error.message });
+  }
+});
+
+// ============================================
+// ASIGNAR CONDUCTOR A PEDIDO - POST (usado por frontend)
+// ============================================
+app.post('/api/orders/:id/assign', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'driver') {
+      return res.status(403).json({ error: 'Solo conductores pueden asignarse pedidos' });
+    }
+
+    const { id } = req.params;
+    const order = await Order.findByPk(id, {
+      include: [
+        { model: Store, as: 'store' },
+        { model: User, as: 'customer' }
+      ]
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: 'Pedido no encontrado' });
+    }
+
+    if (order.status !== ORDER_STATES.READY) {
+      return res.status(400).json({ 
+        error: 'Solo se pueden asignar pedidos en estado "ready"' 
+      });
+    }
+
+    if (order.driverId) {
+      return res.status(400).json({ error: 'Este pedido ya tiene un conductor asignado' });
+    }
+
+    const driver = await User.findByPk(req.user.id);
+    if (!driver.available) {
+      return res.status(400).json({ error: 'Debes estar disponible para tomar pedidos' });
+    }
+
+    await order.update({
+      driverId: req.user.id,
+      assignedAt: new Date(),
+      statusHistory: [...order.statusHistory, {
+        status: 'assigned_to_driver',
+        timestamp: new Date(),
+        note: `Asignado al conductor ${driver.name}`,
+        driverId: driver.id
+      }]
+    });
+
+    notifyUser(order.customerId, {
+      title: 'Conductor asignado',
+      message: `${driver.name} recogerá tu pedido`,
+      type: 'info',
+      orderId: order.id,
+      timestamp: new Date()
+    });
+
+    if (order.store && order.store.ownerId) {
+      notifyUser(order.store.ownerId, {
+        title: 'Conductor asignado',
+        message: `${driver.name} recogerá el pedido #${order.orderNumber}`,
+        type: 'info',
+        orderId: order.id,
+        timestamp: new Date()
+      });
+    }
+
+    io.emit('order_update', { 
+      orderId: order.id, 
+      order 
+    });
+
+    res.json({ 
+      message: 'Pedido asignado exitosamente',
+      order 
+    });
+  } catch (error) {
+    console.error('Error asignando pedido:', error);
+    res.status(500).json({ error: 'Error al asignar pedido', details: error.message });
+  }
+});
+
   try {
     const drivers = await User.findAll({
       where: { 
