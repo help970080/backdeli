@@ -46,15 +46,28 @@
             }
         }
 
+        async function cleanOldImages() {
+            if (!confirm('¿Eliminar todas las imágenes antiguas (rutas /uploads/)?\n\nEsto NO borra las tiendas ni productos.')) {
+                return;
+            }
+
+            try {
+                const data = await apiCall('/admin/clean-images', 'POST');
+                alert(`✅ Limpieza completada!\n\nTiendas: ${data.storesUpdated}\nProductos: ${data.productsUpdated}`);
+                loadStats();
+            } catch (error) {
+                console.error('Error limpiando:', error);
+                alert('❌ Error al limpiar imágenes: ' + error.message);
+            }
+        }
+
         async function loadStats() {
             try {
-                // Intentar con la ruta correcta
                 const data = await apiCall('/stats');
                 stats = data.stats || {};
                 render();
             } catch (error) {
                 console.error('Error cargando estadísticas:', error);
-                // Si falla, usar stats vacíos
                 stats = {
                     totalStores: 0,
                     totalProducts: 0,
@@ -67,10 +80,8 @@
 
         async function loadPendingDrivers() {
             try {
-                // Obtener todos los conductores y filtrar localmente
                 const data = await apiCall('/drivers');
                 const allDrivers = data.drivers || [];
-                // Filtrar solo los no aprobados
                 pendingDrivers = allDrivers.filter(d => !d.approved);
                 render();
             } catch (error) {
@@ -133,16 +144,24 @@
                                 <div class="text-4xl">👨‍💼</div>
                                 <div>
                                     <h1 class="text-2xl font-bold text-gray-800">Panel Administrador</h1>
-                                    <p class="text-gray-600">${user ? user.name : 'Admin'}</p>
+                                    <p class="text-gray-600">${user ? user.name : 'Administrador'}</p>
                                 </div>
                             </div>
                             
-                            <button 
-                                onclick="handleLogout()"
-                                class="bg-red-500 hover:bg-red-600 text-white px-6 py-2 rounded-lg transition"
-                            >
-                                Cerrar Sesión
-                            </button>
+                            <div class="flex gap-3">
+                                <button 
+                                    onclick="cleanOldImages()"
+                                    class="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-lg transition flex items-center gap-2"
+                                >
+                                    🧹 Limpiar Imágenes
+                                </button>
+                                <button 
+                                    onclick="handleLogout()"
+                                    class="bg-red-500 hover:bg-red-600 text-white px-6 py-2 rounded-lg transition"
+                                >
+                                    Cerrar Sesión
+                                </button>
+                            </div>
                         </div>
                     </div>
 
