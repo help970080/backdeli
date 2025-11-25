@@ -21,6 +21,7 @@
                 <input 
                     type="email" 
                     id="email"
+                    value="admin@delivery.com"
                     class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
                     required
                     placeholder="tu@email.com"
@@ -32,6 +33,7 @@
                 <input 
                     type="password" 
                     id="password"
+                    value="970080"
                     class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
                     required
                     placeholder="••••••••"
@@ -101,20 +103,6 @@
                 errorDiv.classList.remove('hidden');
             }
         });
-    <script>
-<script>
-// Auto-completar admin pero permitir cambios
-document.addEventListener('DOMContentLoaded', function() {
-    const emailInput = document.getElementById('email');
-    const passwordInput = document.getElementById('password');
-    
-    // Solo auto-completar si están vacíos
-    if (emailInput && emailInput.value === '') {
-        emailInput.value = 'admin@delivery.com';
-    }
-    if (passwordInput && passwordInput.value === '') {
-        passwordInput.value = '970080';
-    }
-});
+    </script>
 </body>
 </html>
