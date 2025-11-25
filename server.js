@@ -1268,6 +1268,53 @@ app.get('/api/stats', authenticateToken, async (req, res) => {
         }).length
       };
     }
+    } else if (userRole === 'admin') {
+      const allOrders = await Order.findAll();
+      const completedOrders = allOrders.filter(o => o.status === 'delivered');
+      const today = new Date().toDateString();
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      
+      // Calcular ganancias totales de la plataforma
+      const totalPlatformEarnings = completedOrders.reduce((sum, o) => {
+        return sum + (o.platformCommission || o.platformEarnings || 0);
+      }, 0);
+      
+      // Ganancias de hoy
+      const earningsToday = completedOrders
+        .filter(o => o.deliveredAt && new Date(o.deliveredAt).toDateString() === today)
+        .reduce((sum, o) => sum + (o.platformCommission || o.platformEarnings || 0), 0);
+      
+      // Ganancias del mes actual
+      const earningsThisMonth = completedOrders
+        .filter(o => o.deliveredAt && new Date(o.deliveredAt) >= startOfMonth)
+        .reduce((sum, o) => sum + (o.platformCommission || o.platformEarnings || 0), 0);
+      
+      // Pedidos completados hoy
+      const ordersToday = completedOrders.filter(o => {
+        return o.deliveredAt && new Date(o.deliveredAt).toDateString() === today;
+      }).length;
+      
+      // Pedidos completados este mes
+      const ordersThisMonth = completedOrders.filter(o => {
+        return o.deliveredAt && new Date(o.deliveredAt) >= startOfMonth;
+      }).length;
+      
+      stats = {
+        totalStores: await Store.count(),
+        totalProducts: await Product.count(),
+        totalOrders: allOrders.length,
+        activeOrders: allOrders.filter(o => !['delivered', 'cancelled'].includes(o.status)).length,
+        completedOrders: completedOrders.length,
+        totalPlatformEarnings,
+        earningsToday,
+        earningsThisMonth,
+        ordersToday,
+        ordersThisMonth,
+        totalDrivers: await User.count({ where: { role: 'driver' } }),
+        totalClients: await User.count({ where: { role: 'client' } }),
+        pendingDrivers: await User.count({ where: { role: 'driver', approved: false } })
+      };
 
     res.json({ stats });
   } catch (error) {

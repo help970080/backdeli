@@ -21,7 +21,7 @@
         let allDrivers = [];
         let allClients = [];
         let allStores = [];
-        let currentTab = 'dashboard'; // dashboard, drivers, clients, stores
+        let currentTab = 'dashboard'; // dashboard, drivers, clients, stores, earnings
 
         if (!token) {
             window.location.href = '/';
@@ -307,28 +307,34 @@
 
                     <!-- Tabs -->
                     <div class="bg-white rounded-xl shadow-lg mb-6 overflow-hidden">
-                        <div class="flex border-b">
+                        <div class="flex border-b overflow-x-auto">
                             <button 
                                 onclick="changeTab('dashboard')"
-                                class="flex-1 px-6 py-4 font-semibold transition ${currentTab === 'dashboard' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}"
+                                class="flex-1 px-6 py-4 font-semibold transition whitespace-nowrap ${currentTab === 'dashboard' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}"
                             >
                                 📊 Dashboard
                             </button>
                             <button 
+                                onclick="changeTab('earnings')"
+                                class="flex-1 px-6 py-4 font-semibold transition whitespace-nowrap ${currentTab === 'earnings' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}"
+                            >
+                                💰 Ganancias
+                            </button>
+                            <button 
                                 onclick="changeTab('drivers')"
-                                class="flex-1 px-6 py-4 font-semibold transition ${currentTab === 'drivers' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}"
+                                class="flex-1 px-6 py-4 font-semibold transition whitespace-nowrap ${currentTab === 'drivers' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}"
                             >
                                 🚗 Conductores (${allDrivers.length})
                             </button>
                             <button 
                                 onclick="changeTab('clients')"
-                                class="flex-1 px-6 py-4 font-semibold transition ${currentTab === 'clients' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}"
+                                class="flex-1 px-6 py-4 font-semibold transition whitespace-nowrap ${currentTab === 'clients' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}"
                             >
                                 👥 Clientes (${allClients.length})
                             </button>
                             <button 
                                 onclick="changeTab('stores')"
-                                class="flex-1 px-6 py-4 font-semibold transition ${currentTab === 'stores' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}"
+                                class="flex-1 px-6 py-4 font-semibold transition whitespace-nowrap ${currentTab === 'stores' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}"
                             >
                                 🏪 Tiendas (${allStores.length})
                             </button>
@@ -344,6 +350,8 @@
             switch(currentTab) {
                 case 'dashboard':
                     return renderDashboard();
+                case 'earnings':
+                    return renderEarnings();
                 case 'drivers':
                     return renderDrivers();
                 case 'clients':
@@ -374,6 +382,40 @@
                     <div class="bg-gradient-to-br from-yellow-500 to-yellow-600 rounded-lg shadow-lg p-6 text-white">
                         <div class="text-sm opacity-80">Pedidos Activos</div>
                         <div class="text-3xl font-bold mt-2">${stats?.activeOrders || 0}</div>
+                    </div>
+                </div>
+
+                <!-- Resumen de Ganancias -->
+                <div class="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl shadow-xl p-8 mb-6 text-white">
+                    <div class="flex justify-between items-start mb-6">
+                        <div>
+                            <h2 class="text-2xl font-bold mb-2">💰 Ganancias de la Plataforma</h2>
+                            <p class="text-emerald-100">Comisiones generadas por entregas completadas</p>
+                        </div>
+                        <button 
+                            onclick="changeTab('earnings')"
+                            class="bg-white/20 hover:bg-white/30 px-6 py-2 rounded-lg font-semibold transition"
+                        >
+                            Ver Detalles →
+                        </button>
+                    </div>
+                    
+                    <div class="grid md:grid-cols-3 gap-6">
+                        <div class="bg-white/10 backdrop-blur-sm rounded-lg p-6">
+                            <div class="text-sm opacity-90 mb-2">💵 Total Generado</div>
+                            <div class="text-4xl font-bold">${formatCurrency(stats?.totalPlatformEarnings || 0)}</div>
+                            <div class="text-sm opacity-75 mt-2">${stats?.completedOrders || 0} pedidos completados</div>
+                        </div>
+                        <div class="bg-white/10 backdrop-blur-sm rounded-lg p-6">
+                            <div class="text-sm opacity-90 mb-2">📅 Este Mes</div>
+                            <div class="text-4xl font-bold">${formatCurrency(stats?.earningsThisMonth || 0)}</div>
+                            <div class="text-sm opacity-75 mt-2">${stats?.ordersThisMonth || 0} pedidos</div>
+                        </div>
+                        <div class="bg-white/10 backdrop-blur-sm rounded-lg p-6">
+                            <div class="text-sm opacity-90 mb-2">🌟 Hoy</div>
+                            <div class="text-4xl font-bold">${formatCurrency(stats?.earningsToday || 0)}</div>
+                            <div class="text-sm opacity-75 mt-2">${stats?.ordersToday || 0} pedidos</div>
+                        </div>
                     </div>
                 </div>
 
@@ -455,6 +497,123 @@
                     >
                         🔄 Actualizar
                     </button>
+                </div>
+            `;
+        }
+
+        function renderEarnings() {
+            return `
+                <div class="space-y-6">
+                    <!-- Resumen Principal -->
+                    <div class="bg-gradient-to-br from-green-600 to-emerald-700 rounded-xl shadow-xl p-8 text-white">
+                        <h2 class="text-3xl font-bold mb-2">💰 Ganancias Totales de la Plataforma</h2>
+                        <div class="text-5xl font-bold mt-4">${formatCurrency(stats?.totalPlatformEarnings || 0)}</div>
+                        <p class="text-green-100 mt-2">De ${stats?.completedOrders || 0} pedidos completados</p>
+                    </div>
+
+                    <!-- Desglose de Ganancias -->
+                    <div class="grid md:grid-cols-3 gap-6">
+                        <div class="bg-white rounded-xl shadow-lg p-6">
+                            <div class="flex items-center gap-3 mb-4">
+                                <div class="text-4xl">📅</div>
+                                <div>
+                                    <div class="text-sm text-gray-600">Ganancias del Mes</div>
+                                    <div class="text-2xl font-bold text-gray-800">${formatCurrency(stats?.earningsThisMonth || 0)}</div>
+                                </div>
+                            </div>
+                            <div class="text-sm text-gray-600">
+                                ${stats?.ordersThisMonth || 0} pedidos este mes
+                            </div>
+                            <div class="mt-4 pt-4 border-t">
+                                <div class="text-xs text-gray-500">Promedio por pedido</div>
+                                <div class="text-lg font-semibold text-green-600">
+                                    ${formatCurrency((stats?.earningsThisMonth || 0) / (stats?.ordersThisMonth || 1))}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bg-white rounded-xl shadow-lg p-6">
+                            <div class="flex items-center gap-3 mb-4">
+                                <div class="text-4xl">🌟</div>
+                                <div>
+                                    <div class="text-sm text-gray-600">Ganancias de Hoy</div>
+                                    <div class="text-2xl font-bold text-gray-800">${formatCurrency(stats?.earningsToday || 0)}</div>
+                                </div>
+                            </div>
+                            <div class="text-sm text-gray-600">
+                                ${stats?.ordersToday || 0} pedidos hoy
+                            </div>
+                            <div class="mt-4 pt-4 border-t">
+                                <div class="text-xs text-gray-500">Promedio por pedido</div>
+                                <div class="text-lg font-semibold text-green-600">
+                                    ${formatCurrency((stats?.earningsToday || 0) / (stats?.ordersToday || 1))}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bg-white rounded-xl shadow-lg p-6">
+                            <div class="flex items-center gap-3 mb-4">
+                                <div class="text-4xl">📊</div>
+                                <div>
+                                    <div class="text-sm text-gray-600">Promedio Total</div>
+                                    <div class="text-2xl font-bold text-gray-800">
+                                        ${formatCurrency((stats?.totalPlatformEarnings || 0) / (stats?.completedOrders || 1))}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="text-sm text-gray-600">
+                                Por pedido completado
+                            </div>
+                            <div class="mt-4 pt-4 border-t">
+                                <div class="text-xs text-gray-500">Total de pedidos</div>
+                                <div class="text-lg font-semibold text-blue-600">
+                                    ${stats?.completedOrders || 0}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Estadísticas Adicionales -->
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <h3 class="text-xl font-bold text-gray-800 mb-4">📈 Estadísticas de la Plataforma</h3>
+                        <div class="grid md:grid-cols-4 gap-4">
+                            <div class="bg-blue-50 rounded-lg p-4">
+                                <div class="text-sm text-gray-600 mb-1">Total Conductores</div>
+                                <div class="text-2xl font-bold text-blue-600">${stats?.totalDrivers || 0}</div>
+                            </div>
+                            <div class="bg-green-50 rounded-lg p-4">
+                                <div class="text-sm text-gray-600 mb-1">Total Clientes</div>
+                                <div class="text-2xl font-bold text-green-600">${stats?.totalClients || 0}</div>
+                            </div>
+                            <div class="bg-purple-50 rounded-lg p-4">
+                                <div class="text-sm text-gray-600 mb-1">Total Tiendas</div>
+                                <div class="text-2xl font-bold text-purple-600">${stats?.totalStores || 0}</div>
+                            </div>
+                            <div class="bg-yellow-50 rounded-lg p-4">
+                                <div class="text-sm text-gray-600 mb-1">Conductores Pendientes</div>
+                                <div class="text-2xl font-bold text-yellow-600">${stats?.pendingDrivers || 0}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Información sobre Comisiones -->
+                    <div class="bg-blue-50 border-l-4 border-blue-500 rounded-lg p-6">
+                        <div class="flex items-start gap-3">
+                            <div class="text-3xl">ℹ️</div>
+                            <div>
+                                <h4 class="font-bold text-blue-900 mb-2">¿Cómo se calculan las ganancias?</h4>
+                                <p class="text-blue-800 text-sm mb-2">
+                                    Las ganancias de la plataforma provienen de las comisiones cobradas en cada pedido entregado.
+                                </p>
+                                <ul class="text-blue-800 text-sm space-y-1">
+                                    <li>• La comisión se calcula automáticamente al completar cada pedido</li>
+                                    <li>• Solo se contabilizan los pedidos con estado "delivered"</li>
+                                    <li>• Los conductores reciben el 80% del fee de entrega</li>
+                                    <li>• La plataforma retiene el 20% como comisión</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             `;
         }
