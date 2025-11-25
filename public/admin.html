@@ -22,6 +22,7 @@
         let allClients = [];
         let allStores = [];
         let currentTab = 'dashboard'; // dashboard, drivers, clients, stores, earnings
+        let commissionsData = null;
 
         if (!token) {
             window.location.href = '/';
@@ -217,6 +218,107 @@
             }
         }
 
+        async function loadCommissions() {
+            try {
+                const data = await apiCall('/admin/drivers/commissions');
+                commissionsData = data;
+                render();
+            } catch (error) {
+                console.error('Error cargando comisiones:', error);
+                commissionsData = { drivers: [], summary: {} };
+                render();
+            }
+        }
+
+        async function suspendDriver(driverId, driverName) {
+            const reason = prompt(`¿Razón para suspender a ${driverName}?`, 'Falta de pago de comisiones semanales');
+            if (!reason) return;
+            
+            if (!confirm(`¿Confirmas suspender a ${driverName}?\n\nNo podrá recibir nuevos pedidos hasta que pague.`)) {
+                return;
+            }
+            
+            try {
+                await apiCall(`/admin/drivers/${driverId}/suspend`, 'POST', { reason });
+                alert(`✅ ${driverName} ha sido suspendido`);
+                loadCommissions();
+            } catch (error) {
+                console.error('Error suspendiendo:', error);
+                alert('❌ Error al suspender conductor: ' + error.message);
+            }
+        }
+
+        async function activateDriver(driverId, driverName) {
+            if (!confirm(`¿Confirmas reactivar a ${driverName}?\n\nPodrá recibir pedidos nuevamente.`)) {
+                return;
+            }
+            
+            try {
+                await apiCall(`/admin/drivers/${driverId}/activate`, 'POST');
+                alert(`✅ ${driverName} ha sido reactivado`);
+                loadCommissions();
+            } catch (error) {
+                console.error('Error reactivando:', error);
+                alert('❌ Error al reactivar conductor: ' + error.message);
+            }
+        }
+
+        async function registerPayment(driverId, driverName, pendingAmount) {
+            const amount = prompt(`Registrar pago de ${driverName}\n\nComisión pendiente: ${formatCurrency(pendingAmount)}\n\nMonto recibido:`, pendingAmount);
+            if (!amount || parseFloat(amount) <= 0) return;
+            
+            const method = prompt('Método de pago:', 'SPEI');
+            const reference = prompt('Referencia/Folio (opcional):', '');
+            const notes = prompt('Notas adicionales (opcional):', '');
+            
+            if (!confirm(`Confirmar pago:\n\nConductor: ${driverName}\nMonto: ${formatCurrency(amount)}\nMétodo: ${method}`)) {
+                return;
+            }
+            
+            try {
+                await apiCall(`/admin/drivers/${driverId}/register-payment`, 'POST', {
+                    amount: parseFloat(amount),
+                    method,
+                    reference,
+                    notes
+                });
+                alert(`✅ Pago registrado exitosamente\n\n${driverName} pagó ${formatCurrency(amount)}`);
+                loadCommissions();
+            } catch (error) {
+                console.error('Error registrando pago:', error);
+                alert('❌ Error al registrar pago: ' + error.message);
+            }
+        }
+
+        async function viewDriverOrders(driverId, driverName) {
+            try {
+                const startOfWeek = new Date();
+                startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
+                startOfWeek.setHours(0, 0, 0, 0);
+                
+                const data = await apiCall(`/admin/drivers/${driverId}/completed-orders?startDate=${startOfWeek.toISOString()}`);
+                
+                let message = `📦 Pedidos de ${driverName} (Esta semana)\n\n`;
+                message += `Total pedidos: ${data.orders.length}\n`;
+                message += `Comisiones generadas: ${formatCurrency(data.summary.totalCommissions)}\n`;
+                message += `Ganancia conductor: ${formatCurrency(data.summary.totalDriverEarnings)}\n\n`;
+                message += `Detalle:\n`;
+                
+                data.orders.slice(0, 10).forEach((order, index) => {
+                    message += `${index + 1}. Pedido #${order.orderNumber} - ${formatCurrency(order.platformCommission || 0)}\n`;
+                });
+                
+                if (data.orders.length > 10) {
+                    message += `\n... y ${data.orders.length - 10} más`;
+                }
+                
+                alert(message);
+            } catch (error) {
+                console.error('Error cargando pedidos:', error);
+                alert('Error al cargar pedidos del conductor');
+            }
+        }
+
         async function approveDriver(driverId) {
             if (!confirm('¿Aprobar este conductor?')) return;
             
@@ -267,6 +369,8 @@
                 loadAllClients();
             } else if (tab === 'stores' && allStores.length === 0) {
                 loadAllStores();
+            } else if (tab === 'commissions' && !commissionsData) {
+                loadCommissions();
             } else {
                 render();
             }
@@ -338,6 +442,12 @@
                             >
                                 🏪 Tiendas (${allStores.length})
                             </button>
+                            <button 
+                                onclick="changeTab('commissions')"
+                                class="flex-1 px-6 py-4 font-semibold transition whitespace-nowrap ${currentTab === 'commissions' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}"
+                            >
+                                🏦 Comisiones ${commissionsData ? '(' + (commissionsData.summary.driversWithDebt || 0) + ')' : ''}
+                            </button>
                         </div>
                     </div>
 
@@ -358,6 +468,8 @@
                     return renderClients();
                 case 'stores':
                     return renderStores();
+                case 'commissions':
+                    return renderCommissions();
                 default:
                     return renderDashboard();
             }
@@ -807,6 +919,190 @@
                             </table>
                         </div>
                     `}
+                </div>
+            `;
+        }
+
+        function renderCommissions() {
+            if (!commissionsData) {
+                return '<div class="text-center py-12"><p class="text-gray-500">Cargando comisiones...</p></div>';
+            }
+            
+            const { drivers, summary } = commissionsData;
+            
+            return `
+                <div class="space-y-6">
+                    <!-- Resumen General -->
+                    <div class="grid md:grid-cols-4 gap-6">
+                        <div class="bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl shadow-lg p-6 text-white">
+                            <div class="text-sm opacity-90 mb-2">💰 Comisiones Pendientes</div>
+                            <div class="text-3xl font-bold">${formatCurrency(summary.totalPendingCommissions || 0)}</div>
+                            <div class="text-sm opacity-75 mt-2">${summary.driversWithDebt || 0} conductores deben</div>
+                        </div>
+                        
+                        <div class="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg p-6 text-white">
+                            <div class="text-sm opacity-90 mb-2">👥 Conductores Activos</div>
+                            <div class="text-3xl font-bold">${summary.activeDrivers || 0}</div>
+                            <div class="text-sm opacity-75 mt-2">De ${summary.totalDrivers || 0} totales</div>
+                        </div>
+                        
+                        <div class="bg-gradient-to-br from-red-500 to-red-600 rounded-xl shadow-lg p-6 text-white">
+                            <div class="text-sm opacity-90 mb-2">⚠️ Conductores Morosos</div>
+                            <div class="text-3xl font-bold">${summary.overdueDrivers || 0}</div>
+                            <div class="text-sm opacity-75 mt-2">+7 días de retraso</div>
+                        </div>
+                        
+                        <div class="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl shadow-lg p-6 text-white">
+                            <div class="text-sm opacity-90 mb-2">🚫 Suspendidos</div>
+                            <div class="text-3xl font-bold">${summary.suspendedDrivers || 0}</div>
+                            <div class="text-sm opacity-75 mt-2">No pueden trabajar</div>
+                        </div>
+                    </div>
+
+                    <!-- Tabla de Conductores -->
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <div class="flex justify-between items-center mb-6">
+                            <h2 class="text-2xl font-bold text-gray-800">👥 Gestión de Comisiones por Conductor</h2>
+                            <button onclick="loadCommissions()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-semibold transition">
+                                🔄 Actualizar
+                            </button>
+                        </div>
+
+                        ${drivers.length === 0 ? `
+                            <div class="text-center py-12"><p class="text-gray-500">No hay conductores registrados</p></div>
+                        ` : `
+                            <div class="space-y-4">
+                                ${drivers.map(driver => {
+                                    const statusColors = {
+                                        'overdue': 'bg-red-100 border-red-500',
+                                        'active_debt': 'bg-yellow-100 border-yellow-500',
+                                        'suspended': 'bg-gray-100 border-gray-500',
+                                        'clear': 'bg-green-100 border-green-500',
+                                        'pending': 'bg-blue-100 border-blue-500'
+                                    };
+                                    
+                                    const statusTexts = {
+                                        'overdue': '🚨 MOROSO (+7 días)',
+                                        'active_debt': '⏳ Debe esta semana',
+                                        'suspended': '🚫 SUSPENDIDO',
+                                        'clear': '✅ Al corriente',
+                                        'pending': '⏳ Pendiente aprobación'
+                                    };
+                                    
+                                    const statusColor = statusColors[driver.status] || 'bg-gray-100 border-gray-500';
+                                    const statusText = statusTexts[driver.status] || driver.status;
+                                    
+                                    return `
+                                        <div class="border-l-4 ${statusColor} rounded-lg p-4">
+                                            <div class="flex justify-between items-start mb-3">
+                                                <div class="flex-1">
+                                                    <div class="flex items-center gap-3 mb-2">
+                                                        <h3 class="font-bold text-lg text-gray-800">${driver.name}</h3>
+                                                        <span class="px-3 py-1 rounded-full text-xs font-semibold ${
+                                                            driver.status === 'overdue' ? 'bg-red-200 text-red-800' :
+                                                            driver.status === 'active_debt' ? 'bg-yellow-200 text-yellow-800' :
+                                                            driver.status === 'suspended' ? 'bg-gray-200 text-gray-800' :
+                                                            driver.status === 'clear' ? 'bg-green-200 text-green-800' :
+                                                            'bg-blue-200 text-blue-800'
+                                                        }">
+                                                            ${statusText}
+                                                        </span>
+                                                    </div>
+                                                    <div class="grid md:grid-cols-2 gap-2 text-sm text-gray-600">
+                                                        <div>📧 ${driver.email}</div>
+                                                        <div>📱 ${driver.phone}</div>
+                                                        <div>🚗 Entregas: <strong>${driver.totalDeliveries}</strong></div>
+                                                        <div>💰 Balance: <strong>${formatCurrency(driver.balance)}</strong></div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <!-- Información de Comisiones -->
+                                            <div class="bg-white rounded-lg p-4 mb-3">
+                                                <div class="grid md:grid-cols-3 gap-4 text-sm">
+                                                    <div>
+                                                        <div class="text-gray-600 mb-1">Comisión Esta Semana</div>
+                                                        <div class="text-2xl font-bold ${driver.weekCommissions > 0 ? 'text-orange-600' : 'text-green-600'}">
+                                                            ${formatCurrency(driver.weekCommissions)}
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <div class="text-gray-600 mb-1">Comisiones Históricas</div>
+                                                        <div class="text-xl font-semibold text-gray-700">
+                                                            ${formatCurrency(driver.totalCommissions)}
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <div class="text-gray-600 mb-1">Último Pago</div>
+                                                        <div class="text-sm ${driver.lastPayment ? 'text-gray-700' : 'text-red-600'}">
+                                                            ${driver.lastPayment ? `Hace ${driver.daysSincePayment} días` : 'Nunca ha pagado'}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <!-- Botones de Acción -->
+                                            <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                                ${driver.weekCommissions > 0 ? `
+                                                    <button onclick="registerPayment(${driver.id}, '${driver.name}', ${driver.weekCommissions})"
+                                                        class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold transition text-sm">
+                                                        💰 Registrar Pago
+                                                    </button>
+                                                ` : `
+                                                    <button disabled class="bg-gray-300 text-gray-500 px-4 py-2 rounded-lg font-semibold text-sm cursor-not-allowed">
+                                                        ✅ Sin Deuda
+                                                    </button>
+                                                `}
+                                                
+                                                ${!driver.suspended ? `
+                                                    <button onclick="suspendDriver(${driver.id}, '${driver.name}')"
+                                                        class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-semibold transition text-sm">
+                                                        🚫 Suspender
+                                                    </button>
+                                                ` : `
+                                                    <button onclick="activateDriver(${driver.id}, '${driver.name}')"
+                                                        class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold transition text-sm">
+                                                        ✅ Reactivar
+                                                    </button>
+                                                `}
+                                                
+                                                <button onclick="viewDriverOrders(${driver.id}, '${driver.name}')"
+                                                    class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-semibold transition text-sm">
+                                                    📦 Ver Pedidos
+                                                </button>
+                                                
+                                                <button onclick="alert('Historial próximamente')"
+                                                    class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg font-semibold transition text-sm">
+                                                    📋 Historial
+                                                </button>
+                                            </div>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        `}
+                    </div>
+
+                    <!-- Información sobre Sistema de Comisiones -->
+                    <div class="bg-blue-50 border-l-4 border-blue-500 rounded-lg p-6">
+                        <div class="flex items-start gap-3">
+                            <div class="text-3xl">ℹ️</div>
+                            <div>
+                                <h4 class="font-bold text-blue-900 mb-2">Sistema de Cobro Semanal</h4>
+                                <p class="text-blue-800 text-sm mb-2">
+                                    Los conductores trabajan durante la semana y pagan sus comisiones al final del período (Domingo a Domingo).
+                                </p>
+                                <ul class="text-blue-800 text-sm space-y-1">
+                                    <li>• <strong>Comisión:</strong> 20% del fee de entrega</li>
+                                    <li>• <strong>Corte semanal:</strong> Domingo 23:59</li>
+                                    <li>• <strong>Plazo de pago:</strong> 7 días (Hasta siguiente Domingo)</li>
+                                    <li>• <strong>Morosidad:</strong> +7 días sin pagar</li>
+                                    <li>• <strong>Suspensión:</strong> Bloqueamos recepción de nuevos pedidos</li>
+                                    <li>• <strong>Reactivación:</strong> Al registrar el pago completo</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             `;
         }
