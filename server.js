@@ -1267,7 +1267,6 @@ app.get('/api/stats', authenticateToken, async (req, res) => {
           return new Date(o.createdAt).toDateString() === today;
         }).length
       };
-    }
     } else if (userRole === 'admin') {
       const allOrders = await Order.findAll();
       const completedOrders = allOrders.filter(o => o.status === 'delivered');
@@ -1315,6 +1314,7 @@ app.get('/api/stats', authenticateToken, async (req, res) => {
         totalClients: await User.count({ where: { role: 'client' } }),
         pendingDrivers: await User.count({ where: { role: 'driver', approved: false } })
       };
+    }
 
     res.json({ stats });
   } catch (error) {
