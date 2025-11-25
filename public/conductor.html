@@ -69,14 +69,41 @@
             }
         }
 
+        // NUEVA FUNCIÓN: Tomar un pedido que está listo
+        async function takeOrder(orderId) {
+            if (!confirm('¿Confirmas que vas a recoger este pedido?')) {
+                return;
+            }
+
+            try {
+                // Primero asignar el pedido al conductor
+                await apiCall(`/orders/${orderId}/assign`, 'POST', { driverId: user.id });
+                
+                // Luego cambiar el estado a picked_up
+                await apiCall(`/orders/${orderId}/status`, 'PUT', { status: 'picked_up' });
+                
+                alert('✅ Pedido asignado y recogido. ¡Ahora dirígete al cliente!');
+                loadOrders();
+                loadStats();
+            } catch (error) {
+                console.error('Error tomando pedido:', error);
+                // Si falla el assign, intentar solo cambiar estado (por si ya está asignado)
+                try {
+                    await apiCall(`/orders/${orderId}/status`, 'PUT', { status: 'picked_up' });
+                    alert('✅ Pedido recogido. ¡Ahora dirígete al cliente!');
+                    loadOrders();
+                    loadStats();
+                } catch (error2) {
+                    console.error('Error en plan B:', error2);
+                }
+            }
+        }
+
         async function updateOrderStatus(orderId, status) {
             try {
                 await apiCall(`/orders/${orderId}/status`, 'PUT', { status });
                 
-                // Mensajes según el estado
-                if (status === 'picked_up') {
-                    alert('✅ Pedido recogido. ¡Ahora dirígete al cliente!');
-                } else if (status === 'on_way') {
+                if (status === 'on_way') {
                     alert('🛵 En camino. ¡Conduce con cuidado!');
                 } else if (status === 'delivered') {
                     alert('🎉 ¡Pedido entregado con éxito!\n💰 Tu ganancia fue registrada.');
@@ -130,46 +157,6 @@
                 'cancelled': '❌ Cancelado'
             };
             return texts[status] || status;
-        }
-
-        function getNextAction(status) {
-            const actions = {
-                'ready': { 
-                    text: '📦 Confirmar Recogida', 
-                    nextStatus: 'picked_up', 
-                    color: 'bg-purple-600 hover:bg-purple-700',
-                    icon: '🚗',
-                    description: 'Confirma que recogiste el pedido de la tienda'
-                },
-                'picked_up': { 
-                    text: '🛵 Iniciar Entrega', 
-                    nextStatus: 'on_way', 
-                    color: 'bg-violet-600 hover:bg-violet-700',
-                    icon: '🛵',
-                    description: 'Marca que estás en camino al cliente'
-                },
-                'on_way': { 
-                    text: '✅ Marcar Entregado y Cobrar', 
-                    nextStatus: 'delivered', 
-                    color: 'bg-green-600 hover:bg-green-700',
-                    icon: '💰',
-                    description: '¡Confirma la entrega y registra tu pago!'
-                }
-            };
-            return actions[status];
-        }
-
-        function canShowActionButton(order) {
-            // Mostrar botón si:
-            // 1. El pedido está en 'ready' (cualquiera puede tomarlo)
-            // 2. O si es MI pedido y está en estado donde puedo actuar
-            const isMyOrder = order.driverId === user.id;
-            const actionableStates = ['ready', 'picked_up', 'on_way'];
-            
-            if (order.status === 'ready') return true; // Cualquiera puede tomar
-            if (isMyOrder && actionableStates.includes(order.status)) return true;
-            
-            return false;
         }
 
         function render() {
@@ -229,8 +216,6 @@
                                         <p class="text-sm text-gray-400 mt-2">Los pedidos listos aparecerán aquí</p>
                                     </div>
                                 ` : activeOrders.map(order => {
-                                    const nextAction = getNextAction(order.status);
-                                    const showButton = canShowActionButton(order);
                                     const isMyOrder = order.driverId === user.id;
                                     
                                     return `
@@ -252,25 +237,8 @@
                                             </span>
                                         </div>
                                         
-                                        <!-- Estados donde el conductor NO puede hacer nada -->
-                                        ${['pending', 'accepted', 'preparing'].includes(order.status) ? `
-                                            <div class="bg-yellow-50 border-l-4 border-yellow-400 p-3 mb-3 rounded">
-                                                <div class="flex items-start gap-2">
-                                                    <span class="text-xl">⏳</span>
-                                                    <div>
-                                                        <div class="text-sm font-semibold text-yellow-800">Esperando a la tienda</div>
-                                                        <div class="text-xs text-yellow-700 mt-1">
-                                                            ${order.status === 'pending' ? 'La tienda aún no acepta el pedido' : 
-                                                              order.status === 'accepted' ? 'La tienda está por comenzar a preparar' :
-                                                              'La tienda está preparando el pedido'}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ` : ''}
-                                        
-                                        <!-- Estado READY: Listo para recoger -->
-                                        ${order.status === 'ready' ? `
+                                        <!-- Estado READY: Listo para TOMAR -->
+                                        ${order.status === 'ready' && !isMyOrder ? `
                                             <div class="bg-purple-50 border-l-4 border-purple-400 p-4 mb-3 rounded">
                                                 <div class="flex items-start gap-3">
                                                     <span class="text-3xl">📦</span>
@@ -279,155 +247,131 @@
                                                         <div class="text-xs text-purple-700 mb-2">
                                                             Dirígete a la tienda para recoger este pedido
                                                         </div>
-                                                        <div class="bg-white rounded p-2 text-xs">
-                                                            <div class="font-semibold text-gray-700 mb-1">📍 Ubicación de recogida:</div>
-                                                            <div class="text-gray-600">${order.store.location.address}</div>
+                                                        <div class="bg-white rounded p-2 text-xs mb-2">
+                                                            <div class="font-semibold text-gray-700 mb-1">📍 Ubicación:</div>
+                                                            <div class="text-gray-600">${order.store.location?.address || 'Av. Reforma 123'}</div>
                                                         </div>
                                                     </div>
                                                 </div>
                                             </div>
+                                            
+                                            <div class="space-y-2 text-sm mb-3">
+                                                <div class="flex justify-between">
+                                                    <span class="text-gray-600">Distancia:</span>
+                                                    <span class="font-semibold">${(order.distance || 5.2).toFixed(1)} km</span>
+                                                </div>
+                                                <div class="flex justify-between items-center bg-green-50 p-2 rounded">
+                                                    <span class="text-gray-700 font-semibold">💵 Tu ganancia:</span>
+                                                    <span class="font-bold text-green-600 text-xl">${formatCurrency(order.driverEarnings || 0)}</span>
+                                                </div>
+                                            </div>
+                                            
+                                            <button 
+                                                onclick="takeOrder(${order.id})"
+                                                class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-lg transition"
+                                            >
+                                                🚗📦 Tomar y Recoger Pedido
+                                            </button>
                                         ` : ''}
                                         
-                                        <!-- Estado PICKED_UP: Pedido recogido -->
-                                        ${order.status === 'picked_up' ? `
+                                        <!-- Estado PICKED_UP: Ya lo recogiste -->
+                                        ${order.status === 'picked_up' && isMyOrder ? `
                                             <div class="bg-violet-50 border-l-4 border-violet-400 p-4 mb-3 rounded">
                                                 <div class="flex items-start gap-3">
                                                     <span class="text-3xl">🚗</span>
                                                     <div class="flex-1">
                                                         <div class="text-sm font-bold text-violet-900 mb-1">Pedido en tu poder</div>
                                                         <div class="text-xs text-violet-700 mb-2">
-                                                            Ahora dirígete a la dirección del cliente
+                                                            Dirígete a la dirección del cliente
                                                         </div>
                                                         <div class="bg-white rounded p-2 text-xs">
-                                                            <div class="font-semibold text-gray-700 mb-1">📍 Dirección de entrega:</div>
+                                                            <div class="font-semibold text-gray-700 mb-1">📍 Entrega:</div>
                                                             <div class="text-gray-600">${order.deliveryAddress.address}</div>
                                                         </div>
                                                     </div>
                                                 </div>
                                             </div>
+                                            
+                                            <button 
+                                                onclick="updateOrderStatus(${order.id}, 'on_way')"
+                                                class="w-full bg-violet-600 hover:bg-violet-700 text-white font-bold py-3 rounded-lg transition"
+                                            >
+                                                🛵 Iniciar Entrega
+                                            </button>
                                         ` : ''}
                                         
-                                        <!-- Estado ON_WAY: En camino - CON ÉNFASIS EN ENTREGA -->
-                                        ${order.status === 'on_way' ? `
+                                        <!-- Estado ON_WAY: En camino -->
+                                        ${order.status === 'on_way' && isMyOrder ? `
                                             <div class="bg-gradient-to-br from-orange-100 to-orange-50 border-2 border-orange-400 p-4 mb-3 rounded-lg">
                                                 <div class="flex items-start gap-3">
                                                     <span class="text-4xl animate-bounce">🛵</span>
                                                     <div class="flex-1">
                                                         <div class="text-base font-bold text-orange-900 mb-2">🎯 ¡Casi llegas!</div>
-                                                        <div class="text-sm text-orange-800 mb-3 font-semibold">
-                                                            Al llegar, entrega el pedido y presiona el botón para cobrar
-                                                        </div>
                                                         <div class="bg-white rounded-lg p-3 shadow-sm mb-2">
-                                                            <div class="font-semibold text-gray-700 mb-2 flex items-center gap-2">
-                                                                📍 <span>Dirección de entrega:</span>
-                                                            </div>
+                                                            <div class="font-semibold text-gray-700 mb-2">📍 Dirección:</div>
                                                             <div class="text-gray-800 font-medium mb-2">${order.deliveryAddress.address}</div>
-                                                            <div class="text-gray-600 text-sm flex items-center gap-2">
-                                                                📞 <span>${order.customer.phone}</span>
-                                                            </div>
+                                                            <div class="text-gray-600 text-sm">📞 ${order.customer.phone}</div>
                                                         </div>
-                                                        <div class="bg-green-50 border border-green-300 rounded p-2 mt-3">
-                                                            <div class="text-sm font-bold text-green-800 flex items-center gap-2">
-                                                                💰 <span>Tu ganancia al entregar: ${formatCurrency(order.driverEarnings || 0)}</span>
+                                                        <div class="bg-green-50 border border-green-300 rounded p-2">
+                                                            <div class="text-sm font-bold text-green-800">
+                                                                💰 Tu ganancia: ${formatCurrency(order.driverEarnings || 0)}
                                                             </div>
                                                         </div>
                                                     </div>
                                                 </div>
                                             </div>
+                                            
+                                            <button 
+                                                onclick="updateOrderStatus(${order.id}, 'delivered')"
+                                                class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition"
+                                            >
+                                                ✅ Marcar Entregado y Cobrar
+                                            </button>
                                         ` : ''}
                                         
-                                        <!-- Información del pedido -->
-                                        <div class="space-y-2 text-sm mb-3">
-                                            <div class="flex justify-between">
-                                                <span class="text-gray-600">Distancia:</span>
-                                                <span class="font-semibold">${order.distance.toFixed(1)} km</span>
-                                            </div>
-                                            <div class="flex justify-between items-center bg-green-50 p-2 rounded">
-                                                <span class="text-gray-700 font-semibold">💵 Tu ganancia:</span>
-                                                <span class="font-bold text-green-600 text-xl">${formatCurrency(order.driverEarnings || 0)}</span>
-                                            </div>
-                                            <div class="flex justify-between">
-                                                <span class="text-gray-600">Total del pedido:</span>
-                                                <span class="font-semibold">${formatCurrency(order.total)}</span>
-                                            </div>
-                                        </div>
-
-                                        <!-- Items del pedido -->
-                                        ${order.items ? `
-                                            <div class="bg-white rounded p-3 mb-3 border border-gray-200">
-                                                <div class="text-xs font-semibold text-gray-700 mb-2">📋 Items del pedido:</div>
-                                                ${order.items.map(item => `
-                                                    <div class="text-sm text-gray-600 flex justify-between py-1">
-                                                        <span>${item.quantity}x ${item.name}</span>
-                                                        <span class="font-medium">${formatCurrency(item.total)}</span>
-                                                    </div>
-                                                `).join('')}
-                                            </div>
-                                        ` : ''}
-
-                                        <!-- Notas del cliente -->
-                                        ${order.notes ? `
-                                            <div class="bg-yellow-50 rounded p-3 mb-3 text-sm border-l-4 border-yellow-400">
-                                                <div class="font-semibold text-yellow-800 mb-1 flex items-center gap-2">
-                                                    📝 <span>Notas del cliente:</span>
+                                        <!-- Estados sin acción -->
+                                        ${['pending', 'accepted', 'preparing'].includes(order.status) ? `
+                                            <div class="bg-yellow-50 border-l-4 border-yellow-400 p-3 rounded">
+                                                <div class="text-sm font-semibold text-yellow-800">⏳ Esperando a la tienda</div>
+                                                <div class="text-xs text-yellow-700 mt-1">
+                                                    ${order.status === 'pending' ? 'La tienda aún no acepta el pedido' : 
+                                                      order.status === 'accepted' ? 'La tienda está por comenzar' :
+                                                      'La tienda está preparando'}
                                                 </div>
-                                                <div class="text-yellow-700 italic">"${order.notes}"</div>
-                                            </div>
-                                        ` : ''}
-
-                                        <!-- Botón de acción - MEJORADO -->
-                                        ${showButton && nextAction ? `
-                                            <div class="mt-4">
-                                                <button 
-                                                    onclick="updateOrderStatus('${order.id}', '${nextAction.nextStatus}')"
-                                                    class="w-full ${nextAction.color} text-white font-bold py-4 rounded-lg transition shadow-lg hover:shadow-xl transform hover:scale-105 text-lg"
-                                                >
-                                                    ${nextAction.icon} ${nextAction.text}
-                                                </button>
-                                                <div class="text-xs text-center text-gray-600 mt-2 font-medium">
-                                                    ${nextAction.description}
-                                                </div>
-                                            </div>
-                                        ` : ''}
-                                        
-                                        ${!showButton && !['delivered', 'cancelled'].includes(order.status) && !isMyOrder ? `
-                                            <div class="text-center text-sm text-gray-500 italic py-2 bg-gray-100 rounded">
-                                                ⏳ Esperando a la tienda...
                                             </div>
                                         ` : ''}
                                     </div>
-                                `}).join('')}
+                                    `;
+                                }).join('')}
                             </div>
                         </div>
-
+                        
                         <!-- Historial -->
                         <div class="bg-white rounded-xl shadow-lg p-6">
-                            <h2 class="text-2xl font-bold text-gray-800 mb-4">📊 Historial (${completedOrders.length})</h2>
-                            <div class="space-y-3 max-h-[600px] overflow-y-auto">
+                            <h2 class="text-2xl font-bold text-gray-800 mb-4">📜 Historial (${completedOrders.length})</h2>
+                            <div class="space-y-3 max-h-96 overflow-y-auto">
                                 ${completedOrders.length === 0 ? `
                                     <div class="text-center py-12">
-                                        <div class="text-6xl mb-4">📦</div>
-                                        <p class="text-gray-500">No hay entregas completadas</p>
-                                        <p class="text-sm text-gray-400 mt-2">Tus entregas aparecerán aquí</p>
+                                        <p class="text-gray-500">Sin entregas completadas</p>
                                     </div>
                                 ` : completedOrders.map(order => `
-                                    <div class="bg-gray-50 rounded-lg p-4 border border-gray-200 hover:shadow-md transition">
-                                        <div class="flex justify-between items-start mb-2">
-                                            <div>
+                                    <div class="bg-gray-50 rounded-lg p-3 border-l-4 ${getStatusColor(order.status).replace('bg-', 'border-')}">
+                                        <div class="flex justify-between items-start">
+                                            <div class="flex-1">
                                                 <div class="font-semibold">Pedido #${order.orderNumber}</div>
-                                                <div class="text-sm text-gray-600">🏪 ${order.store.name}</div>
-                                                <div class="text-sm text-gray-600">👤 ${order.customer.name}</div>
+                                                <div class="text-sm text-gray-600">${order.store.name}</div>
+                                                <div class="text-xs text-gray-500">${new Date(order.createdAt).toLocaleDateString('es-MX')}</div>
                                             </div>
-                                            <span class="px-2 py-1 rounded text-xs text-white ${getStatusColor(order.status)}">
-                                                ${getStatusText(order.status)}
-                                            </span>
-                                        </div>
-                                        <div class="flex justify-between text-sm mt-3 pt-3 border-t">
-                                            <span class="text-gray-600">Ganancia:</span>
-                                            <span class="font-bold text-green-600">${formatCurrency(order.driverEarnings || 0)}</span>
-                                        </div>
-                                        <div class="text-xs text-gray-500 mt-2">
-                                            📅 ${new Date(order.createdAt).toLocaleString('es-MX')}
+                                            <div class="text-right">
+                                                <span class="px-2 py-1 rounded text-xs text-white ${getStatusColor(order.status)}">
+                                                    ${getStatusText(order.status)}
+                                                </span>
+                                                ${order.status === 'delivered' ? `
+                                                    <div class="text-green-600 font-bold text-sm mt-1">
+                                                        ${formatCurrency(order.driverEarnings || 0)}
+                                                    </div>
+                                                ` : ''}
+                                            </div>
                                         </div>
                                     </div>
                                 `).join('')}
@@ -448,26 +392,34 @@
                     return;
                 }
                 
-                // Conectar WebSocket
+                if (!user.approved) {
+                    alert('Tu cuenta está pendiente de aprobación');
+                    window.location.href = '/';
+                    return;
+                }
+                
                 socket = io(SOCKET_URL);
                 socket.emit('subscribe', { userId: user.id, role: user.role });
-                
                 socket.on(`driver:${user.id}`, (data) => {
-                    if (data.type === 'new_order') {
-                        loadOrders();
-                    } else if (data.type === 'order_ready') {
-                        alert('📦 ¡Pedido listo para recoger!');
+                    if (data.type === 'new_order' || data.type === 'order_update') {
                         loadOrders();
                     }
                 });
                 
                 loadOrders();
                 loadStats();
+                
+                // Auto-refresh cada 30 segundos
+                setInterval(() => {
+                    loadOrders();
+                    loadStats();
+                }, 30000);
             })
             .catch(() => {
                 localStorage.removeItem('token');
                 window.location.href = '/';
             });
     </script>
+<script src="/notifications.js"></script>
 </body>
 </html>
