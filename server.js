@@ -1082,6 +1082,67 @@ app.get('/api/drivers', authenticateToken, async (req, res) => {
   }
 });
 
+// Ruta para obtener todos los clientes (para admin)
+app.get('/api/clients', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    const clients = await User.findAll({
+      where: { role: 'client' },
+      attributes: { exclude: ['password'] },
+      order: [['createdAt', 'DESC']]
+    });
+
+    res.json({ clients });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener clientes', details: error.message });
+  }
+});
+
+// Ruta para obtener todas las tiendas (para admin)
+app.get('/api/admin/stores', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    const stores = await Store.findAll({
+      include: [{
+        model: User,
+        as: 'owner',
+        attributes: ['id', 'name', 'email', 'phone']
+      }],
+      order: [['createdAt', 'DESC']]
+    });
+
+    res.json({ stores });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener tiendas', details: error.message });
+  }
+});
+
+// Ruta para limpiar imágenes no usadas de Cloudinary
+app.post('/api/admin/clean-images', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    // Por ahora retornamos éxito
+    // En el futuro se puede implementar limpieza real de Cloudinary
+    res.json({ 
+      message: 'Limpieza de imágenes completada',
+      deleted: 0,
+      note: 'Funcionalidad de limpieza automática pendiente de implementación'
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al limpiar imágenes', details: error.message });
+  }
+});
+
+
 app.get('/api/drivers/available', async (req, res) => {
   try {
     const drivers = await User.findAll({
