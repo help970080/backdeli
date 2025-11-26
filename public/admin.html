@@ -737,12 +737,20 @@
                         <h2 class="text-2xl font-bold text-gray-800">
                             🚗 Todos los Conductores (${allDrivers.length})
                         </h2>
-                        <button 
-                            onclick="exportDriversToExcel()"
-                            class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-semibold transition flex items-center gap-2"
-                        >
-                            📊 Exportar a Excel
-                        </button>
+                        <div class="flex gap-3">
+                            <button 
+                                onclick="loadAllDrivers()"
+                                class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition flex items-center gap-2"
+                            >
+                                🔄 Actualizar
+                            </button>
+                            <button 
+                                onclick="exportDriversToExcel()"
+                                class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-semibold transition flex items-center gap-2"
+                            >
+                                📊 Exportar a Excel
+                            </button>
+                        </div>
                     </div>
 
                     ${allDrivers.length === 0 ? `
@@ -807,12 +815,20 @@
                         <h2 class="text-2xl font-bold text-gray-800">
                             👥 Todos los Clientes (${allClients.length})
                         </h2>
-                        <button 
-                            onclick="exportClientsToExcel()"
-                            class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-semibold transition flex items-center gap-2"
-                        >
-                            📊 Exportar a Excel
-                        </button>
+                        <div class="flex gap-3">
+                            <button 
+                                onclick="loadAllClients()"
+                                class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition flex items-center gap-2"
+                            >
+                                🔄 Actualizar
+                            </button>
+                            <button 
+                                onclick="exportClientsToExcel()"
+                                class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-semibold transition flex items-center gap-2"
+                            >
+                                📊 Exportar a Excel
+                            </button>
+                        </div>
                     </div>
 
                     ${allClients.length === 0 ? `
@@ -860,12 +876,20 @@
                         <h2 class="text-2xl font-bold text-gray-800">
                             🏪 Todas las Tiendas (${allStores.length})
                         </h2>
-                        <button 
-                            onclick="exportStoresToExcel()"
-                            class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-semibold transition flex items-center gap-2"
-                        >
-                            📊 Exportar a Excel
-                        </button>
+                        <div class="flex gap-3">
+                            <button 
+                                onclick="loadAllStores()"
+                                class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition flex items-center gap-2"
+                            >
+                                🔄 Actualizar
+                            </button>
+                            <button 
+                                onclick="exportStoresToExcel()"
+                                class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-semibold transition flex items-center gap-2"
+                            >
+                                📊 Exportar a Excel
+                            </button>
+                        </div>
                     </div>
 
                     ${allStores.length === 0 ? `
