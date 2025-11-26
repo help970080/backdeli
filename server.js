@@ -133,6 +133,15 @@ const STATE_PERMISSIONS = {
     nextStates: ['delivered']
   },
   delivered: {
+    canUpdate: [],
+    nextStates: []
+  },
+  cancelled: {
+    canUpdate: [],
+    nextStates: []
+  }
+};
+
 
 // ========================================
 // FUNCIONES DE CÁLCULO DE DISTANCIA Y TARIFA
@@ -147,38 +156,24 @@ const STATE_PERMISSIONS = {
  * @returns {number} - Distancia en kilómetros
  */
 function calculateDistance(lat1, lon1, lat2, lon2) {
-  // Radio de la Tierra en km
   const R = 6371;
-  
-  // Convertir grados a radianes
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
-  
   const a = 
     Math.sin(dLat/2) * Math.sin(dLat/2) +
     Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
     Math.sin(dLon/2) * Math.sin(dLon/2);
-  
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  
-  // Distancia en línea recta
   const straightDistance = R * c;
-  
-  // Factor de corrección para calles (1.3 = +30% por curvas/calles)
   const roadFactor = 1.3;
-  
   return straightDistance * roadFactor;
 }
 
 /**
- * Calcula tarifa de entrega basada en distancia
- * Radio máximo: 8 km
- * @param {number} distance - Distancia en km
- * @returns {object|null} - {deliveryFee, driverEarnings, platformCut, distance} o null si fuera de rango
+ * Calcula tarifa de entrega basada en distancia (Radio máximo: 8 km)
  */
 function calculateDeliveryFee(distance) {
   let deliveryFee;
-  
   if (distance <= 2) {
     deliveryFee = 30;
   } else if (distance <= 4) {
@@ -188,13 +183,10 @@ function calculateDeliveryFee(distance) {
   } else if (distance <= 8) {
     deliveryFee = 70;
   } else {
-    // Fuera de rango (más de 8km)
     return null;
   }
-  
-  const driverEarnings = deliveryFee * 0.8;  // 80% para conductor
-  const platformCut = deliveryFee * 0.2;     // 20% para plataforma
-  
+  const driverEarnings = deliveryFee * 0.8;
+  const platformCut = deliveryFee * 0.2;
   return {
     deliveryFee,
     driverEarnings,
@@ -205,26 +197,14 @@ function calculateDeliveryFee(distance) {
 
 /**
  * Estima tiempo de entrega basado en distancia
- * @param {number} distance - Distancia en km
- * @returns {number} - Tiempo en minutos
  */
 function estimateDeliveryTime(distance) {
-  // Asumiendo velocidad promedio de 15 km/h en ciudad
-  // + 10 minutos de preparación
   const travelTime = (distance / 15) * 60;
   const preparationTime = 10;
   return Math.ceil(travelTime + preparationTime);
 }
 
 // ========================================
-    canUpdate: [],
-    nextStates: []
-  },
-  cancelled: {
-    canUpdate: [],
-    nextStates: []
-  }
-};
 
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
@@ -704,28 +684,21 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
       });
     }
 
-    // ========================================
-    // CALCULAR DISTANCIA Y TARIFA DINÁMICA
-    // ========================================
-    
-    // Validar que la tienda tiene ubicación configurada
+    // Validar ubicación de tienda
     if (!store.location?.lat || !store.location?.lng) {
       return res.status(400).json({ 
-        error: 'La tienda no tiene ubicación configurada. Por favor contacta al administrador de la tienda.',
-        storeId: store.id,
-        storeName: store.name
+        error: 'La tienda no tiene ubicación configurada.'
       });
     }
     
-    // Validar que tenemos coordenadas del cliente
+    // Validar ubicación de cliente
     if (!deliveryAddress?.lat || !deliveryAddress?.lng) {
       return res.status(400).json({ 
-        error: 'Debes proporcionar tu ubicación GPS para calcular la tarifa de entrega. Por favor activa la ubicación en tu navegador.',
-        tip: 'La aplicación necesita tu ubicación para calcular el costo exacto de envío basado en la distancia.'
+        error: 'Se requiere tu ubicación GPS para calcular la tarifa de entrega.'
       });
     }
     
-    // Calcular distancia real entre tienda y cliente
+    // Calcular distancia real
     const distance = calculateDistance(
       store.location.lat,
       store.location.lng,
@@ -733,37 +706,22 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
       deliveryAddress.lng
     );
     
-    console.log(`📍 Distancia calculada: ${distance.toFixed(2)} km`);
-    console.log(`   Tienda: ${store.name} (${store.location.lat}, ${store.location.lng})`);
-    console.log(`   Cliente: ${deliveryAddress.address} (${deliveryAddress.lat}, ${deliveryAddress.lng})`);
-    
-    // Calcular tarifa basada en distancia
+    // Calcular tarifa
     const deliveryInfo = calculateDeliveryFee(distance);
     
-    // Verificar que está dentro del radio máximo (8km)
+    // Verificar radio máximo 8km
     if (!deliveryInfo) {
       return res.status(400).json({ 
-        error: `Lo sentimos, esta tienda solo hace entregas dentro de 8 km. Tu dirección está a ${distance.toFixed(1)} km de distancia.`,
+        error: `Esta tienda solo entrega dentro de 8 km. Tu dirección está a ${distance.toFixed(1)} km.`,
         distance: distance.toFixed(2),
-        maxDistance: 8,
-        storeName: store.name,
-        tip: 'Intenta con una tienda más cercana a tu ubicación.'
+        maxDistance: 8
       });
     }
     
-    console.log(`💰 Tarifa calculada: $${deliveryInfo.deliveryFee} (Conductor: $${deliveryInfo.driverEarnings})`);
-    
-    // Usar deliveryFee calculado dinámicamente
     const deliveryFee = deliveryInfo.deliveryFee;
     const total = subtotal + deliveryFee + SERVICE_FEE;
     const commission = subtotal * COMMISSION_RATE;
-    
-    // Estimar tiempo de entrega
     const estimatedTime = estimateDeliveryTime(distance);
-    
-    // ========================================
-    // FIN CÁLCULO DE DISTANCIA
-    // ========================================
 
     const lastOrder = await Order.findOne({ order: [['orderNumber', 'DESC']] });
     const orderNumber = lastOrder ? lastOrder.orderNumber + 1 : 1;
@@ -785,7 +743,6 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
       paymentMethod,
       notes: notes || '',
       distance: deliveryInfo.distance,
-      driverEarnings: deliveryInfo.driverEarnings,
       statusHistory: [
         {
           status: ORDER_STATES.PENDING,
@@ -817,7 +774,6 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
       deliveryInfo: {
         distance: `${deliveryInfo.distance} km`,
         deliveryFee: `$${deliveryFee}`,
-        driverEarnings: `$${deliveryInfo.driverEarnings}`,
         estimatedTime: `${estimatedTime} minutos`
       }
     });
