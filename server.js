@@ -133,6 +133,90 @@ const STATE_PERMISSIONS = {
     nextStates: ['delivered']
   },
   delivered: {
+
+// ========================================
+// FUNCIONES DE CÁLCULO DE DISTANCIA Y TARIFA
+// ========================================
+
+/**
+ * Calcula distancia entre dos puntos GPS usando fórmula Haversine
+ * @param {number} lat1 - Latitud punto 1
+ * @param {number} lon1 - Longitud punto 1
+ * @param {number} lat2 - Latitud punto 2
+ * @param {number} lon2 - Longitud punto 2
+ * @returns {number} - Distancia en kilómetros
+ */
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  // Radio de la Tierra en km
+  const R = 6371;
+  
+  // Convertir grados a radianes
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  
+  // Distancia en línea recta
+  const straightDistance = R * c;
+  
+  // Factor de corrección para calles (1.3 = +30% por curvas/calles)
+  const roadFactor = 1.3;
+  
+  return straightDistance * roadFactor;
+}
+
+/**
+ * Calcula tarifa de entrega basada en distancia
+ * Radio máximo: 8 km
+ * @param {number} distance - Distancia en km
+ * @returns {object|null} - {deliveryFee, driverEarnings, platformCut, distance} o null si fuera de rango
+ */
+function calculateDeliveryFee(distance) {
+  let deliveryFee;
+  
+  if (distance <= 2) {
+    deliveryFee = 30;
+  } else if (distance <= 4) {
+    deliveryFee = 40;
+  } else if (distance <= 6) {
+    deliveryFee = 55;
+  } else if (distance <= 8) {
+    deliveryFee = 70;
+  } else {
+    // Fuera de rango (más de 8km)
+    return null;
+  }
+  
+  const driverEarnings = deliveryFee * 0.8;  // 80% para conductor
+  const platformCut = deliveryFee * 0.2;     // 20% para plataforma
+  
+  return {
+    deliveryFee,
+    driverEarnings,
+    platformCut,
+    distance: parseFloat(distance.toFixed(2))
+  };
+}
+
+/**
+ * Estima tiempo de entrega basado en distancia
+ * @param {number} distance - Distancia en km
+ * @returns {number} - Tiempo en minutos
+ */
+function estimateDeliveryTime(distance) {
+  // Asumiendo velocidad promedio de 15 km/h en ciudad
+  // + 10 minutos de preparación
+  const travelTime = (distance / 15) * 60;
+  const preparationTime = 10;
+  return Math.ceil(travelTime + preparationTime);
+}
+
+// ========================================
     canUpdate: [],
     nextStates: []
   },
@@ -620,9 +704,66 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
       });
     }
 
-    const deliveryFee = store.deliveryFee;
+    // ========================================
+    // CALCULAR DISTANCIA Y TARIFA DINÁMICA
+    // ========================================
+    
+    // Validar que la tienda tiene ubicación configurada
+    if (!store.location?.lat || !store.location?.lng) {
+      return res.status(400).json({ 
+        error: 'La tienda no tiene ubicación configurada. Por favor contacta al administrador de la tienda.',
+        storeId: store.id,
+        storeName: store.name
+      });
+    }
+    
+    // Validar que tenemos coordenadas del cliente
+    if (!deliveryAddress?.lat || !deliveryAddress?.lng) {
+      return res.status(400).json({ 
+        error: 'Debes proporcionar tu ubicación GPS para calcular la tarifa de entrega. Por favor activa la ubicación en tu navegador.',
+        tip: 'La aplicación necesita tu ubicación para calcular el costo exacto de envío basado en la distancia.'
+      });
+    }
+    
+    // Calcular distancia real entre tienda y cliente
+    const distance = calculateDistance(
+      store.location.lat,
+      store.location.lng,
+      deliveryAddress.lat,
+      deliveryAddress.lng
+    );
+    
+    console.log(`📍 Distancia calculada: ${distance.toFixed(2)} km`);
+    console.log(`   Tienda: ${store.name} (${store.location.lat}, ${store.location.lng})`);
+    console.log(`   Cliente: ${deliveryAddress.address} (${deliveryAddress.lat}, ${deliveryAddress.lng})`);
+    
+    // Calcular tarifa basada en distancia
+    const deliveryInfo = calculateDeliveryFee(distance);
+    
+    // Verificar que está dentro del radio máximo (8km)
+    if (!deliveryInfo) {
+      return res.status(400).json({ 
+        error: `Lo sentimos, esta tienda solo hace entregas dentro de 8 km. Tu dirección está a ${distance.toFixed(1)} km de distancia.`,
+        distance: distance.toFixed(2),
+        maxDistance: 8,
+        storeName: store.name,
+        tip: 'Intenta con una tienda más cercana a tu ubicación.'
+      });
+    }
+    
+    console.log(`💰 Tarifa calculada: $${deliveryInfo.deliveryFee} (Conductor: $${deliveryInfo.driverEarnings})`);
+    
+    // Usar deliveryFee calculado dinámicamente
+    const deliveryFee = deliveryInfo.deliveryFee;
     const total = subtotal + deliveryFee + SERVICE_FEE;
     const commission = subtotal * COMMISSION_RATE;
+    
+    // Estimar tiempo de entrega
+    const estimatedTime = estimateDeliveryTime(distance);
+    
+    // ========================================
+    // FIN CÁLCULO DE DISTANCIA
+    // ========================================
 
     const lastOrder = await Order.findOne({ order: [['orderNumber', 'DESC']] });
     const orderNumber = lastOrder ? lastOrder.orderNumber + 1 : 1;
@@ -643,7 +784,8 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
       deliveryAddress,
       paymentMethod,
       notes: notes || '',
-      distance: 5.2,
+      distance: deliveryInfo.distance,
+      driverEarnings: deliveryInfo.driverEarnings,
       statusHistory: [
         {
           status: ORDER_STATES.PENDING,
@@ -671,7 +813,13 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
 
     res.status(201).json({ 
       message: 'Pedido creado exitosamente',
-      order: newOrder 
+      order: newOrder,
+      deliveryInfo: {
+        distance: `${deliveryInfo.distance} km`,
+        deliveryFee: `$${deliveryFee}`,
+        driverEarnings: `$${deliveryInfo.driverEarnings}`,
+        estimatedTime: `${estimatedTime} minutos`
+      }
     });
   } catch (error) {
     res.status(500).json({ error: 'Error al crear pedido', details: error.message });
@@ -1082,441 +1230,6 @@ app.delete('/api/drivers/:driverId', authenticateToken, async (req, res) => {
   }
 });
 
-// ============================================
-// OBTENER TODOS LOS CLIENTES (ADMIN)
-// ============================================
-app.get('/api/clients', authenticateToken, async (req, res) => {
-  try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'No autorizado' });
-    }
-
-    const clients = await User.findAll({
-      where: { role: 'client' },
-      attributes: { exclude: ['password'] },
-      order: [['createdAt', 'DESC']]
-    });
-
-    res.json({ clients });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al obtener clientes', details: error.message });
-  }
-});
-
-// ============================================
-// OBTENER TODAS LAS TIENDAS CON PROPIETARIOS (ADMIN)
-// ============================================
-app.get('/api/admin/stores', authenticateToken, async (req, res) => {
-  try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'No autorizado' });
-    }
-
-    const stores = await Store.findAll({
-      include: [
-        { 
-          model: User, 
-          as: 'owner',
-          attributes: { exclude: ['password'] }
-        }
-      ],
-      order: [['createdAt', 'DESC']]
-    });
-
-    res.json({ stores });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al obtener tiendas', details: error.message });
-  }
-});
-
-// ============================================
-// GESTIÓN DE COMISIONES - ADMINISTRADOR
-// ============================================
-
-// Obtener resumen de comisiones de todos los conductores
-app.get('/api/admin/drivers/commissions', authenticateToken, async (req, res) => {
-  try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'No autorizado' });
-    }
-
-    const drivers = await User.findAll({
-      where: { role: 'driver' },
-      attributes: { exclude: ['password'] },
-      order: [['createdAt', 'DESC']]
-    });
-
-    // Calcular comisiones pendientes por cada conductor
-    const driversWithCommissions = await Promise.all(drivers.map(async (driver) => {
-      // Obtener pedidos completados del conductor
-      const completedOrders = await Order.findAll({
-        where: {
-          driverId: driver.id,
-          status: 'delivered'
-        },
-        order: [['deliveredAt', 'DESC']]
-      });
-
-      // Calcular comisiones totales (plataforma)
-      const totalCommissions = completedOrders.reduce((sum, order) => {
-        return sum + (order.platformCommission || order.platformEarnings || 0);
-      }, 0);
-
-      // Calcular comisiones de esta semana
-      const startOfWeek = new Date();
-      startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay()); // Domingo
-      startOfWeek.setHours(0, 0, 0, 0);
-
-      const weekCommissions = completedOrders
-        .filter(o => o.deliveredAt && new Date(o.deliveredAt) >= startOfWeek)
-        .reduce((sum, order) => sum + (order.platformCommission || order.platformEarnings || 0), 0);
-
-      // Obtener última fecha de pago (simulado por ahora, se puede agregar tabla de pagos)
-      const lastPayment = driver.lastCommissionPayment || null;
-      const daysSincePayment = lastPayment ? 
-        Math.floor((new Date() - new Date(lastPayment)) / (1000 * 60 * 60 * 24)) : 999;
-
-      return {
-        id: driver.id,
-        name: driver.name,
-        email: driver.email,
-        phone: driver.phone,
-        approved: driver.approved,
-        suspended: driver.suspended || false,
-        balance: driver.balance || 0,
-        totalDeliveries: driver.totalDeliveries || 0,
-        totalEarnings: driver.totalEarnings || 0,
-        totalCommissions,
-        weekCommissions,
-        pendingCommission: weekCommissions, // Lo que debe esta semana
-        lastPayment,
-        daysSincePayment,
-        status: !driver.approved ? 'pending' : 
-                driver.suspended ? 'suspended' :
-                weekCommissions > 0 && daysSincePayment > 7 ? 'overdue' :
-                weekCommissions > 0 ? 'active_debt' : 'clear',
-        completedOrdersCount: completedOrders.length,
-        createdAt: driver.createdAt
-      };
-    }));
-
-    // Ordenar por estado (morosos primero)
-    driversWithCommissions.sort((a, b) => {
-      const statusOrder = { overdue: 0, active_debt: 1, suspended: 2, clear: 3, pending: 4 };
-      return statusOrder[a.status] - statusOrder[b.status];
-    });
-
-    // Calcular totales generales
-    const summary = {
-      totalDrivers: drivers.length,
-      activeDrivers: drivers.filter(d => d.approved && !d.suspended).length,
-      suspendedDrivers: driversWithCommissions.filter(d => d.suspended).length,
-      driversWithDebt: driversWithCommissions.filter(d => d.weekCommissions > 0).length,
-      overdueDrivers: driversWithCommissions.filter(d => d.status === 'overdue').length,
-      totalPendingCommissions: driversWithCommissions.reduce((sum, d) => sum + d.weekCommissions, 0),
-      totalCommissionsAllTime: driversWithCommissions.reduce((sum, d) => sum + d.totalCommissions, 0)
-    };
-
-    res.json({ 
-      drivers: driversWithCommissions,
-      summary
-    });
-  } catch (error) {
-    console.error('Error obteniendo comisiones:', error);
-    res.status(500).json({ error: 'Error al obtener comisiones', details: error.message });
-  }
-});
-
-// Suspender conductor por falta de pago
-app.post('/api/admin/drivers/:driverId/suspend', authenticateToken, async (req, res) => {
-  try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'No autorizado' });
-    }
-
-    const { driverId } = req.params;
-    const { reason } = req.body;
-
-    const driver = await User.findByPk(driverId);
-    if (!driver) {
-      return res.status(404).json({ error: 'Conductor no encontrado' });
-    }
-
-    if (driver.role !== 'driver') {
-      return res.status(400).json({ error: 'El usuario no es un conductor' });
-    }
-
-    await driver.update({ 
-      suspended: true,
-      suspensionReason: reason || 'Falta de pago de comisiones',
-      suspensionDate: new Date()
-    });
-
-    // Notificar al conductor
-    notifyUser(driver.id, {
-      title: '⚠️ Cuenta suspendida',
-      message: reason || 'Tu cuenta ha sido suspendida por falta de pago. Contacta a administración.',
-      type: 'warning',
-      timestamp: new Date()
-    });
-
-    res.json({ 
-      message: 'Conductor suspendido exitosamente',
-      driver: {
-        id: driver.id,
-        name: driver.name,
-        suspended: driver.suspended
-      }
-    });
-  } catch (error) {
-    console.error('Error suspendiendo conductor:', error);
-    res.status(500).json({ error: 'Error al suspender conductor', details: error.message });
-  }
-});
-
-// Reactivar conductor
-app.post('/api/admin/drivers/:driverId/activate', authenticateToken, async (req, res) => {
-  try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'No autorizado' });
-    }
-
-    const { driverId } = req.params;
-    const driver = await User.findByPk(driverId);
-
-    if (!driver) {
-      return res.status(404).json({ error: 'Conductor no encontrado' });
-    }
-
-    await driver.update({ 
-      suspended: false,
-      suspensionReason: null,
-      suspensionDate: null
-    });
-
-    // Notificar al conductor
-    notifyUser(driver.id, {
-      title: '✅ Cuenta reactivada',
-      message: 'Tu cuenta ha sido reactivada. Ya puedes recibir pedidos nuevamente.',
-      type: 'success',
-      timestamp: new Date()
-    });
-
-    res.json({ 
-      message: 'Conductor reactivado exitosamente',
-      driver: {
-        id: driver.id,
-        name: driver.name,
-        suspended: driver.suspended
-      }
-    });
-  } catch (error) {
-    console.error('Error reactivando conductor:', error);
-    res.status(500).json({ error: 'Error al reactivar conductor', details: error.message });
-  }
-});
-
-// Registrar pago de comisión
-app.post('/api/admin/drivers/:driverId/register-payment', authenticateToken, async (req, res) => {
-  try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'No autorizado' });
-    }
-
-    const { driverId } = req.params;
-    const { amount, method, reference, notes } = req.body;
-
-    if (!amount || amount <= 0) {
-      return res.status(400).json({ error: 'Monto inválido' });
-    }
-
-    const driver = await User.findByPk(driverId);
-    if (!driver) {
-      return res.status(404).json({ error: 'Conductor no encontrado' });
-    }
-
-    // Registrar el pago
-    await driver.update({
-      lastCommissionPayment: new Date(),
-      totalCommissionsPaid: (driver.totalCommissionsPaid || 0) + parseFloat(amount)
-    });
-
-    // Notificar al conductor
-    notifyUser(driver.id, {
-      title: '💰 Pago registrado',
-      message: `Se registró tu pago de $${amount}. ¡Gracias!`,
-      type: 'success',
-      timestamp: new Date()
-    });
-
-    // Log del pago (en producción, guardar en tabla de payments)
-    console.log('Pago registrado:', {
-      driverId,
-      driverName: driver.name,
-      amount,
-      method,
-      reference,
-      notes,
-      timestamp: new Date()
-    });
-
-    res.json({ 
-      message: 'Pago registrado exitosamente',
-      payment: {
-        driverId: driver.id,
-        driverName: driver.name,
-        amount: parseFloat(amount),
-        method,
-        reference,
-        timestamp: new Date()
-      }
-    });
-  } catch (error) {
-    console.error('Error registrando pago:', error);
-    res.status(500).json({ error: 'Error al registrar pago', details: error.message });
-  }
-});
-
-// Obtener historial de pedidos completados de un conductor (para verificar comisiones)
-app.get('/api/admin/drivers/:driverId/completed-orders', authenticateToken, async (req, res) => {
-  try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'No autorizado' });
-    }
-
-    const { driverId } = req.params;
-    const { startDate, endDate } = req.query;
-
-    const whereClause = {
-      driverId: parseInt(driverId),
-      status: 'delivered'
-    };
-
-    if (startDate || endDate) {
-      whereClause.deliveredAt = {};
-      if (startDate) {
-        whereClause.deliveredAt[sequelize.Sequelize.Op.gte] = new Date(startDate);
-      }
-      if (endDate) {
-        whereClause.deliveredAt[sequelize.Sequelize.Op.lte] = new Date(endDate);
-      }
-    }
-
-    const orders = await Order.findAll({
-      where: whereClause,
-      include: [
-        { model: Store, as: 'store', attributes: ['id', 'name'] },
-        { model: User, as: 'customer', attributes: ['id', 'name', 'phone'] }
-      ],
-      order: [['deliveredAt', 'DESC']]
-    });
-
-    const totalCommissions = orders.reduce((sum, order) => {
-      return sum + (order.platformCommission || order.platformEarnings || 0);
-    }, 0);
-
-    const totalDriverEarnings = orders.reduce((sum, order) => {
-      return sum + (order.driverEarnings || 0);
-    }, 0);
-
-    res.json({ 
-      orders,
-      summary: {
-        totalOrders: orders.length,
-        totalCommissions,
-        totalDriverEarnings,
-        period: {
-          start: startDate || 'inicio',
-          end: endDate || 'hoy'
-        }
-      }
-    });
-  } catch (error) {
-    console.error('Error obteniendo pedidos:', error);
-    res.status(500).json({ error: 'Error al obtener pedidos', details: error.message });
-  }
-});
-// ============================================
-// ASIGNAR CONDUCTOR A PEDIDO - POST (usado por frontend)
-// ============================================
-app.post('/api/orders/:id/assign', authenticateToken, async (req, res) => {
-  try {
-    if (req.user.role !== 'driver') {
-      return res.status(403).json({ error: 'Solo conductores pueden asignarse pedidos' });
-    }
-
-    const { id } = req.params;
-    const order = await Order.findByPk(id, {
-      include: [
-        { model: Store, as: 'store' },
-        { model: User, as: 'customer' }
-      ]
-    });
-
-    if (!order) {
-      return res.status(404).json({ error: 'Pedido no encontrado' });
-    }
-
-    if (order.status !== ORDER_STATES.READY) {
-      return res.status(400).json({ 
-        error: 'Solo se pueden asignar pedidos en estado "ready"' 
-      });
-    }
-
-    if (order.driverId) {
-      return res.status(400).json({ error: 'Este pedido ya tiene un conductor asignado' });
-    }
-
-    const driver = await User.findByPk(req.user.id);
-    if (!driver.available) {
-      return res.status(400).json({ error: 'Debes estar disponible para tomar pedidos' });
-    }
-
-    await order.update({
-      driverId: req.user.id,
-      assignedAt: new Date(),
-      statusHistory: [...order.statusHistory, {
-        status: 'assigned_to_driver',
-        timestamp: new Date(),
-        note: `Asignado al conductor ${driver.name}`,
-        driverId: driver.id
-      }]
-    });
-
-    notifyUser(order.customerId, {
-      title: 'Conductor asignado',
-      message: `${driver.name} recogerá tu pedido`,
-      type: 'info',
-      orderId: order.id,
-      timestamp: new Date()
-    });
-
-    if (order.store && order.store.ownerId) {
-      notifyUser(order.store.ownerId, {
-        title: 'Conductor asignado',
-        message: `${driver.name} recogerá el pedido #${order.orderNumber}`,
-        type: 'info',
-        orderId: order.id,
-        timestamp: new Date()
-      });
-    }
-
-    io.emit('order_update', { 
-      orderId: order.id, 
-      order 
-    });
-
-    res.json({ 
-      message: 'Pedido asignado exitosamente',
-      order 
-    });
-  } catch (error) {
-    console.error('Error asignando pedido:', error);
-    res.status(500).json({ error: 'Error al asignar pedido', details: error.message });
-  }
-});
-
-
 app.get('/api/stats', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -1573,53 +1286,6 @@ app.get('/api/stats', authenticateToken, async (req, res) => {
         ordersToday: storeOrders.filter(o => {
           return new Date(o.createdAt).toDateString() === today;
         }).length
-      };
-    } else if (userRole === 'admin') {
-      const allOrders = await Order.findAll();
-      const completedOrders = allOrders.filter(o => o.status === 'delivered');
-      const today = new Date().toDateString();
-      const now = new Date();
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      
-      // Calcular ganancias totales de la plataforma
-      const totalPlatformEarnings = completedOrders.reduce((sum, o) => {
-        return sum + (o.platformCommission || o.platformEarnings || 0);
-      }, 0);
-      
-      // Ganancias de hoy
-      const earningsToday = completedOrders
-        .filter(o => o.deliveredAt && new Date(o.deliveredAt).toDateString() === today)
-        .reduce((sum, o) => sum + (o.platformCommission || o.platformEarnings || 0), 0);
-      
-      // Ganancias del mes actual
-      const earningsThisMonth = completedOrders
-        .filter(o => o.deliveredAt && new Date(o.deliveredAt) >= startOfMonth)
-        .reduce((sum, o) => sum + (o.platformCommission || o.platformEarnings || 0), 0);
-      
-      // Pedidos completados hoy
-      const ordersToday = completedOrders.filter(o => {
-        return o.deliveredAt && new Date(o.deliveredAt).toDateString() === today;
-      }).length;
-      
-      // Pedidos completados este mes
-      const ordersThisMonth = completedOrders.filter(o => {
-        return o.deliveredAt && new Date(o.deliveredAt) >= startOfMonth;
-      }).length;
-      
-      stats = {
-        totalStores: await Store.count(),
-        totalProducts: await Product.count(),
-        totalOrders: allOrders.length,
-        activeOrders: allOrders.filter(o => !['delivered', 'cancelled'].includes(o.status)).length,
-        completedOrders: completedOrders.length,
-        totalPlatformEarnings,
-        earningsToday,
-        earningsThisMonth,
-        ordersToday,
-        ordersThisMonth,
-        totalDrivers: await User.count({ where: { role: 'driver' } }),
-        totalClients: await User.count({ where: { role: 'client' } }),
-        pendingDrivers: await User.count({ where: { role: 'driver', approved: false } })
       };
     }
 
@@ -1795,32 +1461,6 @@ async function startServer() {
 
     await sequelize.sync({ alter: false });
     console.log('✅ Modelos sincronizados con PostgreSQL');
-
-    // Migración automática de comisiones
-    try {
-      console.log('🔄 Verificando columnas para sistema de comisiones...');
-      
-      await sequelize.query(`
-        ALTER TABLE "Users" 
-        ADD COLUMN IF NOT EXISTS "suspended" BOOLEAN DEFAULT FALSE,
-        ADD COLUMN IF NOT EXISTS "suspensionReason" TEXT,
-        ADD COLUMN IF NOT EXISTS "suspensionDate" TIMESTAMP,
-        ADD COLUMN IF NOT EXISTS "lastCommissionPayment" TIMESTAMP,
-        ADD COLUMN IF NOT EXISTS "totalCommissionsPaid" DECIMAL(10,2) DEFAULT 0;
-      `);
-      
-      await sequelize.query(`
-        CREATE INDEX IF NOT EXISTS "idx_users_suspended" ON "Users"("suspended");
-      `);
-      
-      await sequelize.query(`
-        CREATE INDEX IF NOT EXISTS "idx_users_last_payment" ON "Users"("lastCommissionPayment");
-      `);
-      
-      console.log('✅ Sistema de comisiones configurado correctamente');
-    } catch (error) {
-      console.error('⚠️ Error en migración de comisiones:', error.message);
-    }
 
     const userCount = await User.count();
     if (userCount === 0) {

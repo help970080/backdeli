@@ -141,6 +141,91 @@
                 return;
             }
             
+            // ========================================
+            // CAPTURAR UBICACIÓN GPS DEL CLIENTE
+            // ========================================
+            
+            let userLat = null;
+            let userLng = null;
+            
+            // Mostrar mensaje mientras obtenemos ubicación
+            const originalButtonText = event.target.querySelector('button[type="submit"]').textContent;
+            const submitButton = event.target.querySelector('button[type="submit"]');
+            submitButton.textContent = '📍 Obteniendo ubicación...';
+            submitButton.disabled = true;
+            
+            try {
+                // Intentar obtener ubicación del navegador
+                const position = await new Promise((resolve, reject) => {
+                    if (!navigator.geolocation) {
+                        reject(new Error('Geolocalización no soportada por tu navegador'));
+                    }
+                    
+                    const timeout = setTimeout(() => {
+                        reject(new Error('Tiempo de espera agotado'));
+                    }, 15000); // 15 segundos timeout
+                    
+                    navigator.geolocation.getCurrentPosition(
+                        (pos) => {
+                            clearTimeout(timeout);
+                            resolve(pos);
+                        },
+                        (error) => {
+                            clearTimeout(timeout);
+                            reject(error);
+                        },
+                        {
+                            enableHighAccuracy: true,
+                            timeout: 15000,
+                            maximumAge: 0
+                        }
+                    );
+                });
+                
+                userLat = position.coords.latitude;
+                userLng = position.coords.longitude;
+                
+                console.log(`✅ Ubicación obtenida: ${userLat.toFixed(4)}, ${userLng.toFixed(4)}`);
+                
+            } catch (error) {
+                console.warn('❌ No se pudo obtener ubicación GPS:', error.message);
+                
+                // Restaurar botón
+                submitButton.textContent = originalButtonText;
+                submitButton.disabled = false;
+                
+                // Preguntar al usuario si quiere continuar sin GPS
+                const continueWithoutGPS = confirm(
+                    '⚠️ No pudimos obtener tu ubicación GPS.\n\n' +
+                    'Sin GPS, no podemos calcular la tarifa exacta de entrega.\n\n' +
+                    'Posibles razones:\n' +
+                    '• No diste permiso de ubicación\n' +
+                    '• Tu dispositivo no tiene GPS\n' +
+                    '• La señal GPS es débil\n\n' +
+                    '¿Deseas continuar de todos modos?\n' +
+                    '(Se usará una tarifa estimada)'
+                );
+                
+                if (!continueWithoutGPS) {
+                    return;
+                }
+                
+                // Agregar mensaje sobre activar GPS
+                alert(
+                    '💡 Consejo: Para próximas órdenes\n\n' +
+                    '1. Activa el GPS de tu dispositivo\n' +
+                    '2. En tu navegador, permite el acceso a ubicación\n' +
+                    '3. Así obtendrás tarifas más precisas'
+                );
+            }
+            
+            // ========================================
+            // FIN CAPTURA GPS
+            // ========================================
+            
+            // Restaurar botón
+            submitButton.textContent = '⏳ Creando pedido...';
+            
             const orderData = {
                 storeId: selectedStore.id,
                 items: cart.map(item => ({
@@ -149,8 +234,8 @@
                     notes: ''
                 })),
                 deliveryAddress: {
-                    lat: null,
-                    lng: null,
+                    lat: userLat,
+                    lng: userLng,
                     address: form.address.value,
                     addressReference: form.addressReference?.value || "",
                     contactName: user.name,
@@ -162,12 +247,48 @@
 
             try {
                 const data = await apiCall('/orders', 'POST', orderData);
-                alert('¡Pedido creado exitosamente!');
+                
+                // Mostrar información de la entrega
+                let mensaje = '✅ ¡Pedido creado exitosamente!\n\n';
+                
+                if (data.deliveryInfo) {
+                    mensaje += `📍 Distancia: ${data.deliveryInfo.distance}\n`;
+                    mensaje += `💰 Costo entrega: ${data.deliveryInfo.deliveryFee}\n`;
+                    mensaje += `⏱️ Tiempo estimado: ${data.deliveryInfo.estimatedTime}\n\n`;
+                }
+                
+                mensaje += `📦 Pedido #${data.order.orderNumber}\n`;
+                mensaje += `💵 Total: $${data.order.total.toFixed(2)}`;
+                
+                alert(mensaje);
+                
+                // Limpiar carrito y recargar
                 cart = [];
                 currentView = 'orders';
                 loadOrders();
+                
             } catch (error) {
                 console.error('Error creando pedido:', error);
+                
+                // Mostrar error específico al usuario
+                let errorMsg = '❌ Error al crear pedido\n\n';
+                
+                if (error.message.includes('8 km')) {
+                    errorMsg += 'La tienda está demasiado lejos de tu ubicación.\n\n';
+                    errorMsg += 'Por favor selecciona una tienda más cercana.';
+                } else if (error.message.includes('ubicación')) {
+                    errorMsg += 'Necesitamos tu ubicación GPS.\n\n';
+                    errorMsg += 'Por favor activa la ubicación y vuelve a intentar.';
+                } else {
+                    errorMsg += error.message || 'Error desconocido';
+                }
+                
+                alert(errorMsg);
+                
+            } finally {
+                // Restaurar botón
+                submitButton.textContent = originalButtonText;
+                submitButton.disabled = false;
             }
         }
 
