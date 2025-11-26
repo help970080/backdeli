@@ -149,9 +149,10 @@
                     notes: ''
                 })),
                 deliveryAddress: {
-                    lat: 19.4326,
-                    lng: -99.1332,
+                    lat: null,
+                    lng: null,
                     address: form.address.value,
+                    addressReference: form.addressReference?.value || "",
                     contactName: user.name,
                     contactPhone: user.phone
                 },
@@ -741,6 +742,19 @@
                                             value="${user.address || ''}"
                                             class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
                                             required
+                                        />
+                                    </div>
+                                    
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">
+                                            Referencias de ubicación 
+                                            <span class="text-gray-500 text-xs">(opcional)</span>
+                                        </label>
+                                        <input 
+                                            type="text" 
+                                            name="addressReference"
+                                            placeholder="Ej: Casa blanca con portón, entre calle X y Y"
+                                            class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
                                         />
                                     </div>
                                     
