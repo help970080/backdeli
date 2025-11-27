@@ -59,11 +59,131 @@
 
         async function loadStores() {
             try {
+                storesContainer.innerHTML = '<div class="text-center py-8">🔍 Buscando tiendas cercanas...</div>';
+                
+                // Intentar obtener ubicación del cliente
+                let lat = null, lng = null;
+                try {
+                    const position = await new Promise((resolve, reject) => {
+                        if (!navigator.geolocation) {
+                            reject(new Error('GPS no disponible'));
+                        }
+                        
+                        const timeout = setTimeout(() => {
+                            reject(new Error('GPS timeout'));
+                        }, 10000); // 10 segundos
+                        
+                        navigator.geolocation.getCurrentPosition(
+                            (pos) => {
+                                clearTimeout(timeout);
+                                resolve(pos);
+                            },
+                            (error) => {
+                                clearTimeout(timeout);
+                                reject(error);
+                            },
+                            {
+                                enableHighAccuracy: true,
+                                timeout: 10000,
+                                maximumAge: 300000 // Cache 5 minutos
+                            }
+                        );
+                    });
+                    
+                    lat = position.coords.latitude;
+                    lng = position.coords.longitude;
+                    console.log('📍 Ubicación cliente:', lat.toFixed(4), lng.toFixed(4));
+                    
+                } catch (gpsError) {
+                    console.warn('⚠️ No se pudo obtener GPS:', gpsError.message);
+                    // Continuar sin GPS - mostrar todas las tiendas
+                }
+                
+                // Construir URL con parámetros GPS si están disponibles
+                let url = '/stores';
+                if (lat && lng) {
+                    url += `?lat=${lat}&lng=${lng}&maxDistance=8`;
+                }
+                
+                const data = await apiCall(url);
+                stores = data.stores;
+                
+                // Mostrar información de filtrado
+                if (data.filtered && stores.length > 0) {
+                    const filterMsg = document.createElement('div');
+                    filterMsg.className = 'bg-blue-50 border-l-4 border-blue-500 p-4 mb-4';
+                    filterMsg.innerHTML = `
+                        <div class="flex items-center">
+                            <div class="flex-shrink-0">
+                                <svg class="h-5 w-5 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/>
+                                </svg>
+                            </div>
+                            <div class="ml-3">
+                                <p class="text-sm text-blue-700">
+                                    📍 Mostrando <strong>${stores.length}</strong> tienda${stores.length !== 1 ? 's' : ''} cerca de ti
+                                    ${data.totalStores > stores.length ? ` (${data.totalStores - stores.length} tiendas fuera del rango de 8km)` : ''}
+                                </p>
+                            </div>
+                        </div>
+                    `;
+                    
+                    // Insertar antes del contenedor de tiendas
+                    const container = document.querySelector('#storesContainer');
+                    if (container && container.parentNode) {
+                        const existingMsg = container.parentNode.querySelector('.bg-blue-50');
+                        if (existingMsg) existingMsg.remove();
+                        container.parentNode.insertBefore(filterMsg, container);
+                    }
+                } else if (data.filtered && stores.length === 0) {
+                    storesContainer.innerHTML = `
+                        <div class="text-center py-12">
+                            <div class="text-6xl mb-4">📍</div>
+                            <h3 class="text-xl font-semibold mb-2">No hay tiendas cerca de tu ubicación</h3>
+                            <p class="text-gray-600 mb-4">No encontramos tiendas dentro de 8km</p>
+                            <button 
+                                onclick="loadStoresWithoutFilter()" 
+                                class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700"
+                            >
+                                Ver todas las tiendas
+                            </button>
+                        </div>
+                    `;
+                    return;
+                } else if (!data.filtered && stores.length === 0) {
+                    storesContainer.innerHTML = `
+                        <div class="text-center py-12">
+                            <div class="text-6xl mb-4">🏪</div>
+                            <p class="text-gray-600">No hay tiendas disponibles</p>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                render();
+                
+            } catch (error) {
+                console.error('Error cargando tiendas:', error);
+                storesContainer.innerHTML = `
+                    <div class="text-center py-8">
+                        <p class="text-red-600 mb-4">❌ Error al cargar tiendas</p>
+                        <button onclick="loadStores()" class="text-blue-600 hover:underline">
+                            Reintentar
+                        </button>
+                    </div>
+                `;
+            }
+        }
+
+        // Función auxiliar para cargar todas las tiendas sin filtro
+        async function loadStoresWithoutFilter() {
+            try {
+                storesContainer.innerHTML = '<div class="text-center py-8">Cargando todas las tiendas...</div>';
                 const data = await apiCall('/stores');
                 stores = data.stores;
                 render();
             } catch (error) {
-                console.error('Error cargando tiendas:', error);
+                console.error('Error:', error);
             }
         }
 
@@ -631,13 +751,22 @@
                                             <span class="text-yellow-500">⭐ ${store.rating}</span>
                                         </div>
                                         
+                                        
                                         <div class="flex items-center justify-between text-sm text-gray-600">
                                             <span>🕐 ${store.deliveryTime}</span>
                                             <span>💵 Min: ${formatCurrency(store.minOrder)}</span>
                                         </div>
                                         
+                                        ${store.distance ? `
+                                            <div class="mt-2 flex items-center gap-2">
+                                                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${store.distance <= 2 ? 'bg-green-100 text-green-800' : store.distance <= 5 ? 'bg-yellow-100 text-yellow-800' : 'bg-orange-100 text-orange-800'}">
+                                                    📍 ${store.distance} km de distancia
+                                                </span>
+                                            </div>
+                                        ` : ''}
+                                        
                                         <div class="mt-3 text-sm font-semibold text-gray-700">
-                                            Envío: ${formatCurrency(store.deliveryFee)}
+                                            ${store.distance ? 'Tarifa calculada por distancia GPS' : `Envío: ${formatCurrency(store.deliveryFee)}`}
                                         </div>
                                     </div>
                                 </div>
