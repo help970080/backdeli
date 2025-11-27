@@ -49,13 +49,95 @@
             }
         }
 
+        // Variables globales para filtrado GPS
+        let ordersFilterInfo = null;
+        
         async function loadOrders() {
             try {
-                const data = await apiCall('/orders');
+                // Resetear info de filtrado
+                ordersFilterInfo = null;
+                
+                // Intentar obtener ubicación del conductor
+                let lat = null, lng = null;
+                try {
+                    const position = await new Promise((resolve, reject) => {
+                        if (!navigator.geolocation) {
+                            reject(new Error('GPS no disponible'));
+                        }
+                        
+                        const timeout = setTimeout(() => {
+                            reject(new Error('GPS timeout'));
+                        }, 10000);
+                        
+                        navigator.geolocation.getCurrentPosition(
+                            (pos) => {
+                                clearTimeout(timeout);
+                                resolve(pos);
+                            },
+                            (error) => {
+                                clearTimeout(timeout);
+                                reject(error);
+                            },
+                            {
+                                enableHighAccuracy: true,
+                                timeout: 10000,
+                                maximumAge: 300000 // Cache 5 minutos
+                            }
+                        );
+                    });
+                    
+                    lat = position.coords.latitude;
+                    lng = position.coords.longitude;
+                    console.log('📍 Ubicación conductor:', lat.toFixed(4), lng.toFixed(4));
+                    
+                } catch (gpsError) {
+                    console.warn('⚠️ No se pudo obtener GPS del conductor:', gpsError.message);
+                    console.log('ℹ️ Mostrando todos los pedidos sin filtrado');
+                }
+                
+                // Construir URL con GPS si está disponible
+                let url = '/orders';
+                if (lat && lng) {
+                    url += `?lat=${lat}&lng=${lng}&maxDistance=8`;
+                }
+                
+                const data = await apiCall(url);
                 myOrders = data.orders;
+                
+                // Contar pedidos disponibles y propios
+                const availableOrders = myOrders.filter(o => o.status === 'ready');
+                const myActiveOrders = myOrders.filter(o => o.driverId === user.id);
+                
+                // Si hay filtrado GPS activo
+                if (lat && lng && availableOrders.length > 0) {
+                    const filteredCount = availableOrders.filter(o => o.distanceToStore !== undefined).length;
+                    if (filteredCount > 0) {
+                        ordersFilterInfo = {
+                            filtered: true,
+                            available: filteredCount,
+                            myOrders: myActiveOrders.length
+                        };
+                        console.log(`📍 Filtrado: ${filteredCount} pedidos disponibles dentro de 8km`);
+                    }
+                }
+                
                 render();
             } catch (error) {
                 console.error('Error cargando pedidos:', error);
+                alert('Error al cargar pedidos: ' + error.message);
+            }
+        }
+
+        async function loadOrdersWithoutFilter() {
+            try {
+                ordersFilterInfo = null;
+                const data = await apiCall('/orders');
+                myOrders = data.orders;
+                console.log('ℹ️ Mostrando todos los pedidos sin filtrado GPS');
+                render();
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error al cargar pedidos: ' + error.message);
             }
         }
 
@@ -216,12 +298,36 @@
                                     🔄 Actualizar
                                 </button>
                             </div>
+                            ${ordersFilterInfo && ordersFilterInfo.filtered ? `
+                                <div class="bg-green-50 border-l-4 border-green-500 p-3 mb-4">
+                                    <div class="flex items-center">
+                                        <svg class="h-5 w-5 text-green-400 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/>
+                                        </svg>
+                                        <p class="text-sm text-green-700">
+                                            📍 <strong>${ordersFilterInfo.available}</strong> pedido${ordersFilterInfo.available !== 1 ? 's' : ''} disponible${ordersFilterInfo.available !== 1 ? 's' : ''} cerca de ti (máximo 8km)
+                                            ${ordersFilterInfo.myOrders > 0 ? ` + ${ordersFilterInfo.myOrders} tus pedidos activos` : ''}
+                                        </p>
+                                    </div>
+                                </div>
+                            ` : ''}
                             <div class="space-y-4">
                                 ${activeOrders.length === 0 ? `
                                     <div class="text-center py-12">
                                         <div class="text-6xl mb-4">😴</div>
-                                        <p class="text-gray-500">No hay pedidos activos</p>
-                                        <p class="text-sm text-gray-400 mt-2">Los pedidos listos aparecerán aquí</p>
+                                        ${ordersFilterInfo && ordersFilterInfo.filtered && ordersFilterInfo.available === 0 ? `
+                                            <p class="text-gray-600 font-semibold mb-2">No hay pedidos disponibles cerca de ti</p>
+                                            <p class="text-sm text-gray-400 mb-4">No encontramos pedidos listos dentro de 8km</p>
+                                            <button 
+                                                onclick="loadOrdersWithoutFilter();"
+                                                class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition"
+                                            >
+                                                Ver todos los pedidos (sin filtrar por distancia)
+                                            </button>
+                                        ` : `
+                                            <p class="text-gray-500">No hay pedidos activos</p>
+                                            <p class="text-sm text-gray-400 mt-2">Los pedidos listos aparecerán aquí</p>
+                                        `}
                                     </div>
                                 ` : activeOrders.map(order => {
                                     const isMyOrder = order.driverId === user.id;
@@ -264,10 +370,19 @@
                                             </div>
                                             
                                             <div class="space-y-2 text-sm mb-3">
-                                                <div class="flex justify-between">
-                                                    <span class="text-gray-600">Distancia:</span>
-                                                    <span class="font-semibold">${(order.distance || 5.2).toFixed(1)} km</span>
-                                                </div>
+                                                ${order.distanceToStore !== undefined ? `
+                                                    <div class="flex items-center justify-between bg-blue-50 p-2 rounded">
+                                                        <span class="text-gray-600">📍 Distancia a tienda:</span>
+                                                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${order.distanceToStore <= 2 ? 'bg-green-100 text-green-800' : order.distanceToStore <= 5 ? 'bg-yellow-100 text-yellow-800' : 'bg-orange-100 text-orange-800'}">
+                                                            ${order.distanceToStore} km
+                                                        </span>
+                                                    </div>
+                                                ` : `
+                                                    <div class="flex justify-between">
+                                                        <span class="text-gray-600">Distancia:</span>
+                                                        <span class="font-semibold">${(order.distance || 5.2).toFixed(1)} km</span>
+                                                    </div>
+                                                `}
                                                 <div class="flex justify-between items-center bg-green-50 p-2 rounded">
                                                     <span class="text-gray-700 font-semibold">💵 Tu ganancia:</span>
                                                     <span class="font-bold text-green-600 text-xl">${formatCurrency(order.driverEarnings || 0)}</span>
