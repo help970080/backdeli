@@ -60,6 +60,50 @@
         // Variables globales para filtrado GPS
         let storesFilterInfo = null;
         
+        // ========================================
+        // FUNCIONES MÓVILES
+        // ========================================
+        
+        function openGoogleMaps(lat, lng, label = '') {
+            if (!lat || !lng) {
+                alert('⚠️ Ubicación no disponible');
+                return;
+            }
+            // Abre Google Maps con navegación
+            const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
+            window.open(url, '_blank');
+        }
+        
+        function openWaze(lat, lng) {
+            if (!lat || !lng) {
+                alert('⚠️ Ubicación no disponible');
+                return;
+            }
+            // Abre Waze con navegación
+            const url = `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`;
+            window.open(url, '_blank');
+        }
+        
+        function callPhone(phone, name = '') {
+            if (!phone) {
+                alert('⚠️ Teléfono no disponible');
+                return;
+            }
+            // Abre el marcador del teléfono
+            window.location.href = `tel:${phone}`;
+        }
+        
+        function openWhatsApp(phone, message = '') {
+            if (!phone) {
+                alert('⚠️ Teléfono no disponible');
+                return;
+            }
+            // Limpia el teléfono (solo números)
+            const cleanPhone = phone.replace(/[^\d]/g, '');
+            // Abre WhatsApp
+            const url = `https://wa.me/${cleanPhone}${message ? '?text=' + encodeURIComponent(message) : ''}`;
+            window.open(url, '_blank');
+        }
         async function loadStores() {
             try {
                 // Resetear info de filtrado
@@ -1063,6 +1107,24 @@
                                                 <div class="text-xs text-blue-700">${order.driver.vehicle}</div>
                                             </div>
                                         ` : ''}
+                                        
+                                        ${order.driver && ['picked_up', 'on_way'].includes(order.status) ? `
+                                            <div class="grid grid-cols-2 gap-2 mb-3">
+                                                <button 
+                                                    onclick="callPhone('${order.driver.phone}', '${order.driver.name}')"
+                                                    class="bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-4 rounded-lg transition flex items-center justify-center gap-2 shadow-md"
+                                                >
+                                                    📞 Llamar Conductor
+                                                </button>
+                                                <button 
+                                                    onclick="openWhatsApp('${order.driver.phone}', 'Hola ${order.driver.name}, soy ${order.customer?.name || 'el cliente'} del pedido #${order.orderNumber}')"
+                                                    class="bg-[#25D366] hover:bg-[#20BA5A] text-white font-semibold py-3 px-4 rounded-lg transition flex items-center justify-center gap-2 shadow-md"
+                                                >
+                                                    💬 WhatsApp
+                                                </button>
+                                            </div>
+                                        ` : ''}
+                                        
                                         
                                         <div class="space-y-1 text-sm mb-3">
                                             <div><strong>Items:</strong> ${order.items.length} productos</div>

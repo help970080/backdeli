@@ -52,6 +52,50 @@
         // Variables globales para filtrado GPS
         let ordersFilterInfo = null;
         
+        // ========================================
+        // FUNCIONES MÓVILES
+        // ========================================
+        
+        function openGoogleMaps(lat, lng, label = '') {
+            if (!lat || !lng) {
+                alert('⚠️ Ubicación no disponible');
+                return;
+            }
+            // Abre Google Maps con navegación
+            const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
+            window.open(url, '_blank');
+        }
+        
+        function openWaze(lat, lng) {
+            if (!lat || !lng) {
+                alert('⚠️ Ubicación no disponible');
+                return;
+            }
+            // Abre Waze con navegación
+            const url = `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`;
+            window.open(url, '_blank');
+        }
+        
+        function callPhone(phone, name = '') {
+            if (!phone) {
+                alert('⚠️ Teléfono no disponible');
+                return;
+            }
+            // Abre el marcador del teléfono
+            window.location.href = `tel:${phone}`;
+        }
+        
+        function openWhatsApp(phone, message = '') {
+            if (!phone) {
+                alert('⚠️ Teléfono no disponible');
+                return;
+            }
+            // Limpia el teléfono (solo números)
+            const cleanPhone = phone.replace(/[^\d]/g, '');
+            // Abre WhatsApp
+            const url = `https://wa.me/${cleanPhone}${message ? '?text=' + encodeURIComponent(message) : ''}`;
+            window.open(url, '_blank');
+        }
         async function loadOrders() {
             try {
                 // Resetear info de filtrado
@@ -389,6 +433,17 @@
                                                 </div>
                                             </div>
                                             
+                                            
+                                            <!-- Botones de contacto para READY -->
+                                            <div class="grid grid-cols-1 gap-2 mb-3">
+                                                <button 
+                                                    onclick="openGoogleMaps(${order.store.location?.lat}, ${order.store.location?.lng})"
+                                                    class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg transition flex items-center justify-center gap-2"
+                                                >
+                                                    🗺️ Ir a la Tienda (Google Maps)
+                                                </button>
+                                            </div>
+                                            
                                             <button 
                                                 onclick="takeOrder(${order.id})"
                                                 class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-lg transition"
@@ -413,6 +468,31 @@
                                                             ${order.deliveryAddress.addressReference ? `<div class="text-gray-500 text-xs mt-1">📌 ${order.deliveryAddress.addressReference}</div>` : ""}
                                                         </div>
                                                     </div>
+                                                </div>
+                                            </div>
+                                            
+                                            
+                                            <!-- Botones de contacto para PICKED_UP -->
+                                            <div class="grid grid-cols-1 gap-2 mb-3">
+                                                <button 
+                                                    onclick="openGoogleMaps(${order.deliveryAddress.lat || ''}, ${order.deliveryAddress.lng || ''})"
+                                                    class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg transition flex items-center justify-center gap-2"
+                                                >
+                                                    🗺️ Ir al Cliente (Google Maps)
+                                                </button>
+                                                <div class="grid grid-cols-2 gap-2">
+                                                    <button 
+                                                        onclick="callPhone('${order.customer.phone}', '${order.customer.name}')"
+                                                        class="bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-4 rounded-lg transition flex items-center justify-center gap-2"
+                                                    >
+                                                        📞 Llamar
+                                                    </button>
+                                                    <button 
+                                                        onclick="openWhatsApp('${order.customer.phone}', 'Hola ${order.customer.name}, soy tu conductor del pedido #${order.orderNumber}. Voy en camino a tu domicilio.')"
+                                                        class="bg-[#25D366] hover:bg-[#20BA5A] text-white font-semibold py-3 px-4 rounded-lg transition flex items-center justify-center gap-2"
+                                                    >
+                                                        💬 WhatsApp
+                                                    </button>
                                                 </div>
                                             </div>
                                             
@@ -444,6 +524,23 @@
                                                         </div>
                                                     </div>
                                                 </div>
+                                            </div>
+                                            
+                                            
+                                            <!-- Botones de contacto para ON_WAY -->
+                                            <div class="grid grid-cols-2 gap-2 mb-3">
+                                                <button 
+                                                    onclick="callPhone('${order.customer.phone}', '${order.customer.name}')"
+                                                    class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition flex items-center justify-center gap-2 shadow-lg"
+                                                >
+                                                    📞 Llamar Cliente
+                                                </button>
+                                                <button 
+                                                    onclick="openWhatsApp('${order.customer.phone}', 'Hola ${order.customer.name}, ya estoy llegando con tu pedido #${order.orderNumber}')"
+                                                    class="bg-[#25D366] hover:bg-[#20BA5A] text-white font-bold py-3 px-4 rounded-lg transition flex items-center justify-center gap-2 shadow-lg"
+                                                >
+                                                    💬 WhatsApp
+                                                </button>
                                             </div>
                                             
                                             <button 
