@@ -19,8 +19,15 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
     origin: "*",
-    methods: ["GET", "POST", "PUT", "DELETE"]
-  }
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    credentials: true
+  },
+  transports: ['polling', 'websocket'],
+  allowUpgrades: true,
+  pingTimeout: 60000,
+  pingInterval: 25000,
+  connectTimeout: 45000,
+  allowEIO3: true
 });
 
 app.use(helmet({
@@ -362,12 +369,50 @@ app.get('/api/users/profile', authenticateToken, async (req, res) => {
 
 app.get('/api/stores', async (req, res) => {
   try {
-    const { category } = req.query;
+    const { category, lat, lng, maxDistance } = req.query;
     const where = category ? { category } : {};
-
     const stores = await Store.findAll({ where });
-
-    res.json({ stores });
+    
+    // Si el cliente envió ubicación, filtrar por distancia
+    if (lat && lng) {
+      const clientLat = parseFloat(lat);
+      const clientLng = parseFloat(lng);
+      const maxDist = parseFloat(maxDistance) || 8; // 8km por defecto
+      
+      const nearbyStores = stores.filter(store => {
+        if (!store.location?.lat || !store.location?.lng) {
+          return false; // Tienda sin ubicación
+        }
+        
+        const distance = calculateDistance(
+          clientLat, 
+          clientLng,
+          store.location.lat,
+          store.location.lng
+        );
+        
+        // Agregar distancia al objeto store
+        store.dataValues.distance = parseFloat(distance.toFixed(2));
+        
+        return distance <= maxDist;
+      });
+      
+      // Ordenar por distancia (más cercanas primero)
+      nearbyStores.sort((a, b) => a.dataValues.distance - b.dataValues.distance);
+      
+      console.log(`📍 Filtrado geográfico: ${nearbyStores.length}/${stores.length} tiendas dentro de ${maxDist}km`);
+      
+      return res.json({ 
+        stores: nearbyStores,
+        filtered: true,
+        clientLocation: { lat: clientLat, lng: clientLng },
+        maxDistance: maxDist,
+        totalStores: stores.length
+      });
+    }
+    
+    // Si no hay ubicación, devolver todas
+    res.json({ stores, filtered: false });
   } catch (error) {
     res.status(500).json({ error: 'Error al obtener tiendas', details: error.message });
   }
@@ -784,7 +829,7 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
 
 app.get('/api/orders', authenticateToken, async (req, res) => {
   try {
-    const { status } = req.query;
+    const { status, lat, lng, maxDistance } = req.query;
     let where = {};
 
     if (req.user.role === 'client') {
@@ -806,7 +851,7 @@ app.get('/api/orders', authenticateToken, async (req, res) => {
       where.status = status;
     }
 
-    const orders = await Order.findAll({
+    let orders = await Order.findAll({
       where,
       include: [
         { model: User, as: 'customer', attributes: ['id', 'name', 'phone', 'email'] },
@@ -815,6 +860,56 @@ app.get('/api/orders', authenticateToken, async (req, res) => {
       ],
       order: [['createdAt', 'DESC']]
     });
+
+    // Si es conductor con ubicación, filtrar pedidos READY por distancia
+    if (req.user.role === 'driver' && lat && lng) {
+      const driverLat = parseFloat(lat);
+      const driverLng = parseFloat(lng);
+      const maxDist = parseFloat(maxDistance) || 8; // 8km por defecto
+      
+      const totalOrders = orders.length;
+      
+      orders = orders.filter(order => {
+        // No filtrar pedidos ya asignados a este conductor
+        if (order.driverId === req.user.id) {
+          return true;
+        }
+        
+        // Filtrar pedidos READY por distancia
+        if (order.status === ORDER_STATES.READY) {
+          const store = order.store;
+          if (!store?.location?.lat || !store?.location?.lng) {
+            console.warn(`⚠️ Pedido #${order.orderNumber} sin ubicación de tienda`);
+            return false; // Tienda sin ubicación
+          }
+          
+          const distance = calculateDistance(
+            driverLat,
+            driverLng,
+            store.location.lat,
+            store.location.lng
+          );
+          
+          // Agregar distancia al pedido
+          order.dataValues.distanceToStore = parseFloat(distance.toFixed(2));
+          
+          return distance <= maxDist;
+        }
+        
+        return true;
+      });
+      
+      // Ordenar pedidos READY por distancia (más cercanos primero)
+      orders.sort((a, b) => {
+        if (a.status === ORDER_STATES.READY && b.status === ORDER_STATES.READY) {
+          return (a.dataValues.distanceToStore || 999) - (b.dataValues.distanceToStore || 999);
+        }
+        return 0;
+      });
+      
+      const readyCount = orders.filter(o => o.status === ORDER_STATES.READY).length;
+      console.log(`📍 Conductor: ${readyCount} pedidos disponibles dentro de ${maxDist}km`);
+    }
 
     res.json({ orders });
   } catch (error) {
