@@ -57,9 +57,13 @@
             }
         }
 
+        // Variables globales para filtrado GPS
+        let storesFilterInfo = null;
+        
         async function loadStores() {
             try {
-                storesContainer.innerHTML = '<div class="text-center py-8">🔍 Buscando tiendas cercanas...</div>';
+                // Resetear info de filtrado
+                storesFilterInfo = null;
                 
                 // Intentar obtener ubicación del cliente
                 let lat = null, lng = null;
@@ -71,7 +75,7 @@
                         
                         const timeout = setTimeout(() => {
                             reject(new Error('GPS timeout'));
-                        }, 10000); // 10 segundos
+                        }, 10000);
                         
                         navigator.geolocation.getCurrentPosition(
                             (pos) => {
@@ -96,10 +100,10 @@
                     
                 } catch (gpsError) {
                     console.warn('⚠️ No se pudo obtener GPS:', gpsError.message);
-                    // Continuar sin GPS - mostrar todas las tiendas
+                    console.log('ℹ️ Mostrando todas las tiendas sin filtrado');
                 }
                 
-                // Construir URL con parámetros GPS si están disponibles
+                // Construir URL con GPS si está disponible
                 let url = '/stores';
                 if (lat && lng) {
                     url += `?lat=${lat}&lng=${lng}&maxDistance=8`;
@@ -108,85 +112,38 @@
                 const data = await apiCall(url);
                 stores = data.stores;
                 
-                // Mostrar información de filtrado
-                if (data.filtered && stores.length > 0) {
-                    const filterMsg = document.createElement('div');
-                    filterMsg.className = 'bg-blue-50 border-l-4 border-blue-500 p-4 mb-4';
-                    filterMsg.innerHTML = `
-                        <div class="flex items-center">
-                            <div class="flex-shrink-0">
-                                <svg class="h-5 w-5 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/>
-                                </svg>
-                            </div>
-                            <div class="ml-3">
-                                <p class="text-sm text-blue-700">
-                                    📍 Mostrando <strong>${stores.length}</strong> tienda${stores.length !== 1 ? 's' : ''} cerca de ti
-                                    ${data.totalStores > stores.length ? ` (${data.totalStores - stores.length} tiendas fuera del rango de 8km)` : ''}
-                                </p>
-                            </div>
-                        </div>
-                    `;
-                    
-                    // Insertar antes del contenedor de tiendas
-                    const container = document.querySelector('#storesContainer');
-                    if (container && container.parentNode) {
-                        const existingMsg = container.parentNode.querySelector('.bg-blue-50');
-                        if (existingMsg) existingMsg.remove();
-                        container.parentNode.insertBefore(filterMsg, container);
-                    }
-                } else if (data.filtered && stores.length === 0) {
-                    storesContainer.innerHTML = `
-                        <div class="text-center py-12">
-                            <div class="text-6xl mb-4">📍</div>
-                            <h3 class="text-xl font-semibold mb-2">No hay tiendas cerca de tu ubicación</h3>
-                            <p class="text-gray-600 mb-4">No encontramos tiendas dentro de 8km</p>
-                            <button 
-                                onclick="loadStoresWithoutFilter()" 
-                                class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700"
-                            >
-                                Ver todas las tiendas
-                            </button>
-                        </div>
-                    `;
-                    return;
-                } else if (!data.filtered && stores.length === 0) {
-                    storesContainer.innerHTML = `
-                        <div class="text-center py-12">
-                            <div class="text-6xl mb-4">🏪</div>
-                            <p class="text-gray-600">No hay tiendas disponibles</p>
-                        </div>
-                    `;
-                    return;
+                // Guardar información de filtrado
+                if (data.filtered) {
+                    storesFilterInfo = {
+                        filtered: true,
+                        showing: stores.length,
+                        total: data.totalStores || stores.length,
+                        maxDistance: data.maxDistance || 8,
+                        clientLocation: data.clientLocation
+                    };
+                    console.log(`📍 Filtrado: ${storesFilterInfo.showing}/${storesFilterInfo.total} tiendas dentro de ${storesFilterInfo.maxDistance}km`);
                 }
                 
                 render();
-                
             } catch (error) {
                 console.error('Error cargando tiendas:', error);
-                storesContainer.innerHTML = `
-                    <div class="text-center py-8">
-                        <p class="text-red-600 mb-4">❌ Error al cargar tiendas</p>
-                        <button onclick="loadStores()" class="text-blue-600 hover:underline">
-                            Reintentar
-                        </button>
-                    </div>
-                `;
+                alert('Error al cargar tiendas: ' + error.message);
             }
         }
 
-        // Función auxiliar para cargar todas las tiendas sin filtro
+
         async function loadStoresWithoutFilter() {
             try {
-                storesContainer.innerHTML = '<div class="text-center py-8">Cargando todas las tiendas...</div>';
+                storesFilterInfo = null;
                 const data = await apiCall('/stores');
                 stores = data.stores;
+                console.log('ℹ️ Mostrando todas las tiendas sin filtrado GPS');
                 render();
             } catch (error) {
                 console.error('Error:', error);
+                alert('Error al cargar tiendas: ' + error.message);
             }
         }
-
         async function loadStoreProducts(storeId) {
             try {
                 const data = await apiCall(`/stores/${storeId}`);
@@ -704,7 +661,34 @@
                         </h2>
                     </div>
 
-                    ${filteredStores.length === 0 ? `
+                    ${storesFilterInfo && storesFilterInfo.filtered ? `
+                        <div class="bg-blue-50 border-l-4 border-blue-500 p-4 mb-4">
+                            <div class="flex items-center">
+                                <svg class="h-5 w-5 text-blue-400 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/>
+                                </svg>
+                                <p class="text-sm text-blue-700">
+                                    📍 Mostrando <strong>${storesFilterInfo.showing}</strong> tienda${storesFilterInfo.showing !== 1 ? 's' : ''} cerca de ti
+                                    ${storesFilterInfo.total > storesFilterInfo.showing ? ` (${storesFilterInfo.total - storesFilterInfo.showing} fuera del rango de ${storesFilterInfo.maxDistance}km)` : ''}
+                                </p>
+                            </div>
+                        </div>
+                    ` : ''}
+
+
+                    ${filteredStores.length === 0 && stores.length === 0 && storesFilterInfo && storesFilterInfo.filtered ? `
+                        <div class="bg-white rounded-xl shadow-lg p-12 text-center">
+                            <div class="text-6xl mb-4">📍</div>
+                            <p class="text-gray-600 text-lg mb-2">No hay tiendas cerca de tu ubicación</p>
+                            <p class="text-gray-500 mb-4">No encontramos tiendas dentro de ${storesFilterInfo.maxDistance}km</p>
+                            <button 
+                                onclick="loadStoresWithoutFilter();"
+                                class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition"
+                            >
+                                Ver todas las tiendas (sin filtrar por distancia)
+                            </button>
+                        </div>
+                    ` : filteredStores.length === 0 ? `
                         <div class="bg-white rounded-xl shadow-lg p-12 text-center">
                             <div class="text-6xl mb-4">🔍</div>
                             <p class="text-gray-600 text-lg mb-2">No se encontraron tiendas</p>
@@ -751,14 +735,13 @@
                                             <span class="text-yellow-500">⭐ ${store.rating}</span>
                                         </div>
                                         
-                                        
                                         <div class="flex items-center justify-between text-sm text-gray-600">
                                             <span>🕐 ${store.deliveryTime}</span>
                                             <span>💵 Min: ${formatCurrency(store.minOrder)}</span>
                                         </div>
                                         
-                                        ${store.distance ? `
-                                            <div class="mt-2 flex items-center gap-2">
+                                        ${store.distance !== undefined ? `
+                                            <div class="mt-2 flex items-center">
                                                 <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${store.distance <= 2 ? 'bg-green-100 text-green-800' : store.distance <= 5 ? 'bg-yellow-100 text-yellow-800' : 'bg-orange-100 text-orange-800'}">
                                                     📍 ${store.distance} km de distancia
                                                 </span>
@@ -766,7 +749,7 @@
                                         ` : ''}
                                         
                                         <div class="mt-3 text-sm font-semibold text-gray-700">
-                                            ${store.distance ? 'Tarifa calculada por distancia GPS' : `Envío: ${formatCurrency(store.deliveryFee)}`}
+                                            ${store.distance !== undefined ? 'Tarifa calculada por GPS' : `Envío: ${formatCurrency(store.deliveryFee)}`}
                                         </div>
                                     </div>
                                 </div>
