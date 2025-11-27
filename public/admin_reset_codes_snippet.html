@@ -1,0 +1,121 @@
+<!-- SNIPPET PARA PANEL ADMIN: Ver Códigos de Recuperación -->
+<!-- Agregar esto en tu panel de admin -->
+
+<div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+    <div class="flex justify-between items-center mb-4">
+        <h2 class="text-2xl font-bold text-gray-800">🔐 Códigos de Recuperación Activos</h2>
+        <button 
+            onclick="loadResetCodes()"
+            class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold transition"
+        >
+            🔄 Actualizar
+        </button>
+    </div>
+
+    <div id="resetCodesContainer">
+        <p class="text-gray-600">Haz click en "Actualizar" para ver códigos activos</p>
+    </div>
+</div>
+
+<script>
+    async function loadResetCodes() {
+        try {
+            const token = localStorage.getItem('token');
+            const response = await fetch('/api/admin/reset-codes', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (!response.ok) {
+                throw new Error('Error al cargar códigos');
+            }
+
+            const data = await response.json();
+            renderResetCodes(data.codes);
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Error al cargar códigos de recuperación');
+        }
+    }
+
+    function renderResetCodes(codes) {
+        const container = document.getElementById('resetCodesContainer');
+
+        if (codes.length === 0) {
+            container.innerHTML = `
+                <div class="text-center py-8">
+                    <div class="text-4xl mb-2">✅</div>
+                    <p class="text-gray-600">No hay códigos de recuperación activos</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = `
+            <div class="overflow-x-auto">
+                <table class="w-full">
+                    <thead>
+                        <tr class="border-b-2 border-gray-200">
+                            <th class="text-left py-3 px-4 font-semibold text-gray-700">Usuario</th>
+                            <th class="text-left py-3 px-4 font-semibold text-gray-700">Teléfono</th>
+                            <th class="text-left py-3 px-4 font-semibold text-gray-700">Email</th>
+                            <th class="text-left py-3 px-4 font-semibold text-gray-700">Código</th>
+                            <th class="text-left py-3 px-4 font-semibold text-gray-700">Expira en</th>
+                            <th class="text-left py-3 px-4 font-semibold text-gray-700">Rol</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${codes.map(code => {
+                            const expiresIn = Math.round((new Date(code.expiresAt) - new Date()) / 60000);
+                            const isExpiringSoon = expiresIn < 5;
+                            
+                            return `
+                                <tr class="border-b border-gray-100 hover:bg-gray-50">
+                                    <td class="py-3 px-4">${code.name}</td>
+                                    <td class="py-3 px-4 font-mono">${code.phone}</td>
+                                    <td class="py-3 px-4 text-sm">${code.email || '-'}</td>
+                                    <td class="py-3 px-4">
+                                        <span class="bg-blue-100 text-blue-800 px-3 py-1 rounded-lg font-bold text-lg tracking-wider">
+                                            ${code.code}
+                                        </span>
+                                    </td>
+                                    <td class="py-3 px-4">
+                                        <span class="${isExpiringSoon ? 'text-red-600 font-bold' : 'text-gray-600'}">
+                                            ${expiresIn} min
+                                        </span>
+                                    </td>
+                                    <td class="py-3 px-4">
+                                        <span class="px-2 py-1 rounded text-xs font-semibold ${
+                                            code.role === 'client' ? 'bg-green-100 text-green-800' :
+                                            code.role === 'driver' ? 'bg-blue-100 text-blue-800' :
+                                            code.role === 'store_owner' ? 'bg-purple-100 text-purple-800' :
+                                            'bg-gray-100 text-gray-800'
+                                        }">
+                                            ${code.role}
+                                        </span>
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="mt-4 text-sm text-gray-600">
+                <p>💡 <strong>Tip:</strong> Cuando un usuario te llame diciendo "olvidé mi contraseña", 
+                busca su código aquí y proporciónaselo.</p>
+            </div>
+        `;
+    }
+</script>
+
+<style>
+    /* Estilos opcionales para hacer la tabla más responsive en móvil */
+    @media (max-width: 768px) {
+        table {
+            font-size: 0.875rem;
+        }
+        th, td {
+            padding: 0.5rem !important;
+        }
+    }
+</style>
