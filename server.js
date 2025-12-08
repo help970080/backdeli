@@ -230,6 +230,35 @@ function authenticateToken(req, res, next) {
   });
 }
 
+
+// ============================================
+// 📸 ENDPOINT DE UPLOAD DE IMÁGENES
+// ============================================
+app.post('/api/upload', upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No se proporcionó ninguna imagen' });
+    }
+
+    const folder = req.body.folder || 'delivery-system';
+    
+    // Usar la función uploadImage que ya existe en config/cloudinary
+    const imageUrl = await uploadImage(req.file.buffer, folder);
+
+    res.json({
+      success: true,
+      url: imageUrl
+    });
+
+  } catch (error) {
+    console.error('❌ Error al subir imagen:', error);
+    res.status(500).json({ 
+      error: 'Error al subir imagen',
+      details: error.message 
+    });
+  }
+});
+
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { email, password, name, phone, role, vehicle, license, address, inePhoto, vehiclePhoto } = req.body;

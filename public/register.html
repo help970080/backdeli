@@ -153,7 +153,7 @@
                     </button>
                     <div id="inePreview" class="mt-3 hidden">
                         <img id="inePreviewImg" class="w-full h-48 object-cover rounded-lg" />
-                        <p id="ineStatus" class="text-sm text-gray-600 mt-2 text-center">Preparando subida...</p>
+                        <p class="text-sm text-green-600 mt-2 text-center">✓ Foto cargada</p>
                     </div>
                     <input type="hidden" id="inePhotoUrl" />
                 </div>
@@ -179,7 +179,7 @@
                     </button>
                     <div id="vehiclePreview" class="mt-3 hidden">
                         <img id="vehiclePreviewImg" class="w-full h-48 object-cover rounded-lg" />
-                        <p id="vehicleStatus" class="text-sm text-gray-600 mt-2 text-center">Preparando subida...</p>
+                        <p class="text-sm text-green-600 mt-2 text-center">✓ Foto cargada</p>
                     </div>
                     <input type="hidden" id="vehiclePhotoUrl" />
                 </div>
@@ -252,7 +252,6 @@
             currentRole = role;
             document.getElementById('role').value = role;
 
-            // Reset button styles
             const clientBtn = document.getElementById('clientBtn');
             const driverBtn = document.getElementById('driverBtn');
             const storeBtn = document.getElementById('storeBtn');
@@ -261,7 +260,6 @@
             driverBtn.className = 'py-3 rounded-lg font-semibold transition bg-gray-200 text-gray-700 hover:bg-gray-300 text-sm';
             storeBtn.className = 'py-3 rounded-lg font-semibold transition bg-gray-200 text-gray-700 hover:bg-gray-300 text-sm';
 
-            // Hide all fields
             const clientFields = document.getElementById('clientFields');
             const driverFields = document.getElementById('driverFields');
             const storeFields = document.getElementById('storeFields');
@@ -318,62 +316,30 @@
                     if (type === 'ine') {
                         document.getElementById('inePreviewImg').src = e.target.result;
                         document.getElementById('inePreview').classList.remove('hidden');
-                        document.getElementById('ineStatus').textContent = 'Subiendo imagen...';
-                        document.getElementById('ineStatus').className = 'text-sm text-blue-600 mt-2 text-center';
                     } else {
                         document.getElementById('vehiclePreviewImg').src = e.target.result;
                         document.getElementById('vehiclePreview').classList.remove('hidden');
-                        document.getElementById('vehicleStatus').textContent = 'Subiendo imagen...';
-                        document.getElementById('vehicleStatus').className = 'text-sm text-blue-600 mt-2 text-center';
                     }
                 };
                 reader.readAsDataURL(file);
 
-                // Subir a Cloudinary
-                const formData = new FormData();
-                formData.append('file', file);
-                formData.append('upload_preset', 'ml_default'); // Usar tu upload preset
-                
-                const cloudinaryUrl = 'https://api.cloudinary.com/v1_1/dvvdv9ch1/image/upload';
-                
-                const response = await fetch(cloudinaryUrl, {
-                    method: 'POST',
-                    body: formData
+                // Convertir a base64
+                const base64 = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => resolve(e.target.result);
+                    reader.readAsDataURL(file);
                 });
 
-                if (!response.ok) {
-                    throw new Error('Error al subir imagen');
-                }
-
-                const data = await response.json();
-                const imageUrl = data.secure_url;
-
-                // Guardar URL
+                // Guardar
                 if (type === 'ine') {
-                    document.getElementById('inePhotoUrl').value = imageUrl;
-                    document.getElementById('ineStatus').textContent = '✓ Imagen subida exitosamente';
-                    document.getElementById('ineStatus').className = 'text-sm text-green-600 mt-2 text-center font-semibold';
+                    document.getElementById('inePhotoUrl').value = base64;
                     inePhotoUploaded = true;
                 } else {
-                    document.getElementById('vehiclePhotoUrl').value = imageUrl;
-                    document.getElementById('vehicleStatus').textContent = '✓ Imagen subida exitosamente';
-                    document.getElementById('vehicleStatus').className = 'text-sm text-green-600 mt-2 text-center font-semibold';
+                    document.getElementById('vehiclePhotoUrl').value = base64;
                     vehiclePhotoUploaded = true;
                 }
             } catch (error) {
-                console.error('Error subiendo imagen:', error);
-                
-                if (type === 'ine') {
-                    document.getElementById('ineStatus').textContent = '❌ Error al subir imagen. Intenta de nuevo.';
-                    document.getElementById('ineStatus').className = 'text-sm text-red-600 mt-2 text-center';
-                    inePhotoUploaded = false;
-                } else {
-                    document.getElementById('vehicleStatus').textContent = '❌ Error al subir imagen. Intenta de nuevo.';
-                    document.getElementById('vehicleStatus').className = 'text-sm text-red-600 mt-2 text-center';
-                    vehiclePhotoUploaded = false;
-                }
-                
-                alert('Error al subir imagen a Cloudinary. Por favor intenta de nuevo.');
+                alert('Error al procesar imagen: ' + error.message);
             }
         }
 
@@ -382,8 +348,6 @@
             
             const errorDiv = document.getElementById('error');
             const successDiv = document.getElementById('success');
-            const submitBtn = document.getElementById('submitBtn');
-            
             errorDiv.classList.add('hidden');
             successDiv.classList.add('hidden');
 
@@ -398,10 +362,6 @@
                     return;
                 }
             }
-
-            // Deshabilitar botón
-            submitBtn.disabled = true;
-            submitBtn.textContent = 'Registrando...';
 
             const formData = {
                 name: document.getElementById('name').value,
@@ -451,7 +411,7 @@
                     // Si es conductor, mostrar mensaje de éxito
                     successDiv.innerHTML = `
                         <div class="font-semibold mb-2">✅ Registro exitoso</div>
-                        <p class="text-sm">${data.message || 'Tu cuenta será revisada y aprobada pronto.'}</p>
+                        <p class="text-sm">${data.message}</p>
                         <a href="/" class="inline-block mt-3 text-blue-600 hover:text-blue-700 font-semibold">
                             Volver al login
                         </a>
@@ -466,12 +426,9 @@
             } catch (error) {
                 errorDiv.textContent = error.message;
                 errorDiv.classList.remove('hidden');
-                submitBtn.disabled = false;
-                submitBtn.textContent = 'Crear Cuenta';
             }
         });
     </script>
 <script src="/notifications.js"></script>
 </body>
 </html>
-<!-- v3.1 - Sistema completo con subida a Cloudinary -->
