@@ -1656,10 +1656,17 @@ app.get('/api/admin/drivers/commissions', authenticateToken, async (req, res) =>
 
       // Determinar estado
       let status;
+      
+      // Verificar si pagó esta semana
+      const paidThisWeek = lastPaymentDate && new Date(lastPaymentDate) >= startOfWeek;
+      
       if (!driver.approved) {
         status = 'pending';
       } else if (driver.suspended) {
         status = 'suspended';
+      } else if (paidThisWeek && weekCommissions > 0) {
+        // Si pagó esta semana, considerar que está al corriente aunque tenga comisión acumulada
+        status = 'clear';
       } else if (daysSincePayment > 7 && weekCommissions > 0) {
         status = 'overdue';
       } else if (weekCommissions > 0) {
