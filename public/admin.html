@@ -222,11 +222,15 @@
             try {
                 const data = await apiCall('/admin/drivers/commissions');
                 commissionsData = data;
-                render();
+                if (currentTab === 'commissions') {
+                    render();
+                }
             } catch (error) {
                 console.error('Error cargando comisiones:', error);
                 commissionsData = { drivers: [], summary: {} };
-                render();
+                if (currentTab === 'commissions') {
+                    render();
+                }
             }
         }
 
@@ -388,8 +392,8 @@
                 loadAllClients();
             } else if (tab === 'stores' && allStores.length === 0) {
                 loadAllStores();
-            } else if (tab === 'commissions' && !commissionsData) {
-                loadCommissions();
+            } else if (tab === 'commissions') {
+                loadCommissions(); // Siempre recargar al entrar al tab
             } else {
                 render();
             }
