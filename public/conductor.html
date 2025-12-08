@@ -244,11 +244,10 @@
             }
         }
 
-
         async function toggleAvailability() {
             try {
                 const newAvailability = !user.available;
-                const data = await apiCall(`/drivers/${user.id}/availability`, 'PUT', { available: newAvailability });
+                const data = await apiCall('/drivers/' + user.id + '/availability', 'PUT', { available: newAvailability });
                 
                 user.available = data.available;
                 
@@ -333,21 +332,21 @@
                         <div class="border-t pt-4">
                             <div class="flex items-center justify-between">
                                 <div class="flex items-center gap-3">
-                                    <div class="text-2xl">${user.available ? '🟢' : '⚫'}</div>
+                                    <div class="text-2xl">${user.available ? "🟢" : "⚫"}</div>
                                     <div>
                                         <div class="font-semibold text-gray-800">
-                                            ${user.available ? '✅ Disponible para pedidos' : '⏸️ No disponible'}
+                                            ${user.available ? "✅ Disponible para pedidos" : "⏸️ No disponible"}
                                         </div>
                                         <div class="text-sm text-gray-600">
-                                            ${user.available ? 'Puedes recibir nuevos pedidos' : 'No recibirás nuevos pedidos'}
+                                            ${user.available ? "Puedes recibir nuevos pedidos" : "No recibirás nuevos pedidos"}
                                         </div>
                                     </div>
                                 </div>
                                 <button 
                                     onclick="toggleAvailability()" 
-                                    class="${user.available ? 'bg-gray-600 hover:bg-gray-700' : 'bg-green-600 hover:bg-green-700'} text-white px-6 py-3 rounded-lg transition font-semibold shadow-lg"
+                                    class="${user.available ? "bg-gray-600 hover:bg-gray-700" : "bg-green-600 hover:bg-green-700"} text-white px-6 py-3 rounded-lg transition font-semibold shadow-lg"
                                 >
-                                    ${user.available ? '⏸️ Pausar' : '▶️ Activar'}
+                                    ${user.available ? "⏸️ Pausar" : "▶️ Activar"}
                                 </button>
                             </div>
                         </div>
