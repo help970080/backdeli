@@ -351,6 +351,170 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
   }
 });
 
+
+// ============================================
+// RUTAS DE RECUPERACIÓN DE CONTRASEÑA
+// Agregar después de la ruta de login (después de línea ~350)
+// ============================================
+
+// Almacenamiento temporal de códigos de recuperación (en producción usar Redis)
+const resetCodes = new Map();
+
+// Generar código de 6 dígitos
+function generateResetCode() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+// POST /api/auth/forgot-password - Solicitar código de recuperación
+app.post('/api/auth/forgot-password', async (req, res) => {
+  try {
+    const { phone, email } = req.body;
+
+    if (!phone && !email) {
+      return res.status(400).json({ error: 'Debes proporcionar teléfono o email' });
+    }
+
+    // Buscar usuario por teléfono o email
+    const whereClause = phone ? { phone } : { email };
+    const user = await User.findOne({ where: whereClause });
+
+    if (!user) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    // Generar código de 6 dígitos
+    const code = generateResetCode();
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutos
+
+    // Guardar código
+    const identifier = phone || email;
+    resetCodes.set(identifier, {
+      code,
+      userId: user.id,
+      expiresAt,
+      user: {
+        id: user.id,
+        name: user.name,
+        phone: user.phone,
+        email: user.email,
+        role: user.role
+      }
+    });
+
+    // TODO: En producción, enviar código por SMS/Email
+    // Por ahora, solo lo generamos y el admin puede verlo
+    console.log(`🔑 Código de recuperación generado para ${user.name}: ${code}`);
+
+    // En desarrollo, devolver el código
+    const isDevelopment = process.env.NODE_ENV !== 'production';
+    
+    res.json({
+      message: 'Código de recuperación generado. Contacta al administrador para obtenerlo.',
+      ...(isDevelopment && { devCode: code }) // Solo en desarrollo
+    });
+
+  } catch (error) {
+    console.error('Error en forgot-password:', error);
+    res.status(500).json({ error: 'Error al generar código de recuperación' });
+  }
+});
+
+// POST /api/auth/reset-password - Cambiar contraseña con código
+app.post('/api/auth/reset-password', async (req, res) => {
+  try {
+    const { phone, email, code, newPassword } = req.body;
+
+    if (!code || !newPassword) {
+      return res.status(400).json({ error: 'Código y nueva contraseña son requeridos' });
+    }
+
+    if (!phone && !email) {
+      return res.status(400).json({ error: 'Debes proporcionar teléfono o email' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+    }
+
+    // Buscar código
+    const identifier = phone || email;
+    const resetData = resetCodes.get(identifier);
+
+    if (!resetData) {
+      return res.status(400).json({ error: 'Código inválido o expirado' });
+    }
+
+    // Verificar código
+    if (resetData.code !== code) {
+      return res.status(400).json({ error: 'Código incorrecto' });
+    }
+
+    // Verificar expiración
+    if (new Date() > new Date(resetData.expiresAt)) {
+      resetCodes.delete(identifier);
+      return res.status(400).json({ error: 'Código expirado. Solicita uno nuevo.' });
+    }
+
+    // Buscar usuario
+    const user = await User.findByPk(resetData.userId);
+    if (!user) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    // Cambiar contraseña
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await user.update({ password: hashedPassword });
+
+    // Eliminar código usado
+    resetCodes.delete(identifier);
+
+    console.log(`✅ Contraseña cambiada exitosamente para ${user.name}`);
+
+    res.json({
+      message: 'Contraseña actualizada exitosamente',
+      success: true
+    });
+
+  } catch (error) {
+    console.error('Error en reset-password:', error);
+    res.status(500).json({ error: 'Error al cambiar contraseña' });
+  }
+});
+
+// GET /api/admin/reset-codes - Ver códigos activos (solo admin)
+app.get('/api/admin/reset-codes', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Solo administradores pueden ver códigos' });
+    }
+
+    // Limpiar códigos expirados
+    const now = new Date();
+    for (const [key, value] of resetCodes.entries()) {
+      if (now > new Date(value.expiresAt)) {
+        resetCodes.delete(key);
+      }
+    }
+
+    // Convertir Map a Array
+    const codes = Array.from(resetCodes.values()).map(data => ({
+      code: data.code,
+      expiresAt: data.expiresAt,
+      name: data.user.name,
+      phone: data.user.phone,
+      email: data.user.email,
+      role: data.user.role
+    }));
+
+    res.json({ codes });
+
+  } catch (error) {
+    console.error('Error obteniendo códigos:', error);
+    res.status(500).json({ error: 'Error al obtener códigos' });
+  }
+});
+
+
 app.get('/api/users/profile', authenticateToken, async (req, res) => {
   try {
     const user = await User.findByPk(req.user.id);
