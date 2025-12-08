@@ -244,6 +244,28 @@
             }
         }
 
+
+        async function toggleAvailability() {
+            try {
+                const newAvailability = !user.available;
+                const data = await apiCall(`/drivers/${user.id}/availability`, 'PUT', { available: newAvailability });
+                
+                user.available = data.available;
+                
+                if (user.available) {
+                    alert('✅ ¡Ahora estás DISPONIBLE para recibir pedidos!');
+                } else {
+                    alert('⏸️ Ahora estás NO DISPONIBLE. No recibirás nuevos pedidos.');
+                }
+                
+                render();
+                loadOrders();
+            } catch (error) {
+                console.error('Error cambiando disponibilidad:', error);
+                alert('Error al cambiar disponibilidad: ' + error.message);
+            }
+        }
+
         function handleLogout() {
             localStorage.removeItem('token');
             localStorage.removeItem('user');
@@ -294,7 +316,7 @@
                 <div class="container mx-auto px-4 py-6">
                     <!-- Header -->
                     <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
-                        <div class="flex justify-between items-center">
+                        <div class="flex justify-between items-center mb-4">
                             <div class="flex items-center gap-3">
                                 <div class="text-4xl">🚗</div>
                                 <div>
@@ -305,6 +327,29 @@
                             <button onclick="handleLogout()" class="bg-red-500 hover:bg-red-600 text-white px-6 py-2 rounded-lg transition">
                                 Cerrar Sesión
                             </button>
+                        </div>
+                        
+                        <!-- Toggle de Disponibilidad -->
+                        <div class="border-t pt-4">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-3">
+                                    <div class="text-2xl">${user.available ? '🟢' : '⚫'}</div>
+                                    <div>
+                                        <div class="font-semibold text-gray-800">
+                                            ${user.available ? '✅ Disponible para pedidos' : '⏸️ No disponible'}
+                                        </div>
+                                        <div class="text-sm text-gray-600">
+                                            ${user.available ? 'Puedes recibir nuevos pedidos' : 'No recibirás nuevos pedidos'}
+                                        </div>
+                                    </div>
+                                </div>
+                                <button 
+                                    onclick="toggleAvailability()" 
+                                    class="${user.available ? 'bg-gray-600 hover:bg-gray-700' : 'bg-green-600 hover:bg-green-700'} text-white px-6 py-3 rounded-lg transition font-semibold shadow-lg"
+                                >
+                                    ${user.available ? '⏸️ Pausar' : '▶️ Activar'}
+                                </button>
+                            </div>
                         </div>
                     </div>
 
