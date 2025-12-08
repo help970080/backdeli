@@ -153,7 +153,7 @@
                     </button>
                     <div id="inePreview" class="mt-3 hidden">
                         <img id="inePreviewImg" class="w-full h-48 object-cover rounded-lg" />
-                        <p class="text-sm text-green-600 mt-2 text-center">✓ Foto cargada</p>
+                        <p id="ineStatus" class="text-sm text-gray-600 mt-2 text-center">Preparando subida...</p>
                     </div>
                     <input type="hidden" id="inePhotoUrl" />
                 </div>
@@ -179,7 +179,7 @@
                     </button>
                     <div id="vehiclePreview" class="mt-3 hidden">
                         <img id="vehiclePreviewImg" class="w-full h-48 object-cover rounded-lg" />
-                        <p class="text-sm text-green-600 mt-2 text-center">✓ Foto cargada</p>
+                        <p id="vehicleStatus" class="text-sm text-gray-600 mt-2 text-center">Preparando subida...</p>
                     </div>
                     <input type="hidden" id="vehiclePhotoUrl" />
                 </div>
@@ -187,29 +187,18 @@
 
             <!-- Campos específicos de tienda -->
             <div id="storeFields" class="hidden space-y-4">
-                <div class="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
-                    <p class="text-sm text-green-800">
-                        🏪 Una vez registrado, podrás crear tu tienda y agregar productos desde tu panel.
-                    </p>
-                </div>
-
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">
-                        Nombre del negocio (opcional)
-                    </label>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Nombre del Negocio *</label>
                     <input 
                         type="text" 
                         id="businessName"
                         class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                        placeholder="Ej: Tacos El Güero"
+                        placeholder="Mi Tienda"
                     />
-                    <p class="text-xs text-gray-500 mt-1">Puedes crear tu tienda después del registro</p>
                 </div>
 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">
-                        Dirección del negocio (opcional)
-                    </label>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Dirección del Negocio *</label>
                     <input 
                         type="text" 
                         id="businessAddress"
@@ -219,29 +208,24 @@
                 </div>
 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">
-                        Tipo de negocio
-                    </label>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Tipo de Negocio *</label>
                     <select 
                         id="businessType"
                         class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
                     >
-                        <option value="">Seleccionar...</option>
-                        <option value="Mexicana">Comida Mexicana</option>
-                        <option value="Italiana">Comida Italiana</option>
-                        <option value="Japonesa">Comida Japonesa</option>
-                        <option value="China">Comida China</option>
-                        <option value="Americana">Comida Americana</option>
-                        <option value="Postres">Postres</option>
-                        <option value="Bebidas">Bebidas</option>
-                        <option value="Abarrotes">Abarrotes</option>
-                        <option value="Otro">Otro</option>
+                        <option value="">Selecciona...</option>
+                        <option value="restaurant">Restaurante</option>
+                        <option value="coffee">Cafetería</option>
+                        <option value="grocery">Abarrotes</option>
+                        <option value="pharmacy">Farmacia</option>
+                        <option value="other">Otro</option>
                     </select>
                 </div>
             </div>
 
             <button 
                 type="submit" 
+                id="submitBtn"
                 class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition"
             >
                 Crear Cuenta
@@ -251,10 +235,10 @@
         <div id="error" class="mt-4 hidden p-3 bg-red-100 text-red-700 rounded-lg text-sm"></div>
         <div id="success" class="mt-4 hidden p-3 bg-green-100 text-green-700 rounded-lg text-sm"></div>
         
-        <div class="mt-4 text-center">
+        <div class="mt-6 text-center border-t border-gray-200 pt-6">
             <p class="text-gray-600 text-sm">¿Ya tienes cuenta?</p>
             <a href="/" class="text-blue-600 hover:text-blue-700 font-semibold">
-                Iniciar sesión
+                Iniciar sesión aquí
             </a>
         </div>
     </div>
@@ -268,19 +252,20 @@
             currentRole = role;
             document.getElementById('role').value = role;
 
+            // Reset button styles
             const clientBtn = document.getElementById('clientBtn');
             const driverBtn = document.getElementById('driverBtn');
             const storeBtn = document.getElementById('storeBtn');
-            const clientFields = document.getElementById('clientFields');
-            const driverFields = document.getElementById('driverFields');
-            const storeFields = document.getElementById('storeFields');
 
-            // Reset todos los botones
             clientBtn.className = 'py-3 rounded-lg font-semibold transition bg-gray-200 text-gray-700 hover:bg-gray-300 text-sm';
             driverBtn.className = 'py-3 rounded-lg font-semibold transition bg-gray-200 text-gray-700 hover:bg-gray-300 text-sm';
             storeBtn.className = 'py-3 rounded-lg font-semibold transition bg-gray-200 text-gray-700 hover:bg-gray-300 text-sm';
 
-            // Ocultar todos los campos específicos
+            // Hide all fields
+            const clientFields = document.getElementById('clientFields');
+            const driverFields = document.getElementById('driverFields');
+            const storeFields = document.getElementById('storeFields');
+
             clientFields.classList.add('hidden');
             driverFields.classList.add('hidden');
             storeFields.classList.add('hidden');
@@ -289,7 +274,6 @@
                 clientBtn.className = 'py-3 rounded-lg font-semibold transition bg-blue-600 text-white text-sm';
                 clientFields.classList.remove('hidden');
                 
-                // Remover required de otros campos
                 document.getElementById('vehicle').removeAttribute('required');
                 document.getElementById('license').removeAttribute('required');
                 inePhotoUploaded = false;
@@ -298,14 +282,12 @@
                 driverBtn.className = 'py-3 rounded-lg font-semibold transition bg-blue-600 text-white text-sm';
                 driverFields.classList.remove('hidden');
                 
-                // Agregar required a campos de conductor
                 document.getElementById('vehicle').setAttribute('required', 'required');
                 document.getElementById('license').setAttribute('required', 'required');
             } else if (role === 'store_owner') {
                 storeBtn.className = 'py-3 rounded-lg font-semibold transition bg-blue-600 text-white text-sm';
                 storeFields.classList.remove('hidden');
                 
-                // Remover required de campos de conductor
                 document.getElementById('vehicle').removeAttribute('required');
                 document.getElementById('license').removeAttribute('required');
                 inePhotoUploaded = false;
@@ -336,31 +318,62 @@
                     if (type === 'ine') {
                         document.getElementById('inePreviewImg').src = e.target.result;
                         document.getElementById('inePreview').classList.remove('hidden');
+                        document.getElementById('ineStatus').textContent = 'Subiendo imagen...';
+                        document.getElementById('ineStatus').className = 'text-sm text-blue-600 mt-2 text-center';
                     } else {
                         document.getElementById('vehiclePreviewImg').src = e.target.result;
                         document.getElementById('vehiclePreview').classList.remove('hidden');
+                        document.getElementById('vehicleStatus').textContent = 'Subiendo imagen...';
+                        document.getElementById('vehicleStatus').className = 'text-sm text-blue-600 mt-2 text-center';
                     }
                 };
                 reader.readAsDataURL(file);
 
-                // Subir archivo (simulado - en producción implementa el endpoint)
-                // Por ahora solo guardamos el base64
-                const base64 = await new Promise((resolve) => {
-                    const reader = new FileReader();
-                    reader.onload = (e) => resolve(e.target.result);
-                    reader.readAsDataURL(file);
+                // Subir a Cloudinary
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('upload_preset', 'ml_default'); // Usar tu upload preset
+                
+                const cloudinaryUrl = 'https://api.cloudinary.com/v1_1/dvvdv9ch1/image/upload';
+                
+                const response = await fetch(cloudinaryUrl, {
+                    method: 'POST',
+                    body: formData
                 });
 
-                // Guardar
+                if (!response.ok) {
+                    throw new Error('Error al subir imagen');
+                }
+
+                const data = await response.json();
+                const imageUrl = data.secure_url;
+
+                // Guardar URL
                 if (type === 'ine') {
-                    document.getElementById('inePhotoUrl').value = base64;
+                    document.getElementById('inePhotoUrl').value = imageUrl;
+                    document.getElementById('ineStatus').textContent = '✓ Imagen subida exitosamente';
+                    document.getElementById('ineStatus').className = 'text-sm text-green-600 mt-2 text-center font-semibold';
                     inePhotoUploaded = true;
                 } else {
-                    document.getElementById('vehiclePhotoUrl').value = base64;
+                    document.getElementById('vehiclePhotoUrl').value = imageUrl;
+                    document.getElementById('vehicleStatus').textContent = '✓ Imagen subida exitosamente';
+                    document.getElementById('vehicleStatus').className = 'text-sm text-green-600 mt-2 text-center font-semibold';
                     vehiclePhotoUploaded = true;
                 }
             } catch (error) {
-                alert('Error al procesar imagen: ' + error.message);
+                console.error('Error subiendo imagen:', error);
+                
+                if (type === 'ine') {
+                    document.getElementById('ineStatus').textContent = '❌ Error al subir imagen. Intenta de nuevo.';
+                    document.getElementById('ineStatus').className = 'text-sm text-red-600 mt-2 text-center';
+                    inePhotoUploaded = false;
+                } else {
+                    document.getElementById('vehicleStatus').textContent = '❌ Error al subir imagen. Intenta de nuevo.';
+                    document.getElementById('vehicleStatus').className = 'text-sm text-red-600 mt-2 text-center';
+                    vehiclePhotoUploaded = false;
+                }
+                
+                alert('Error al subir imagen a Cloudinary. Por favor intenta de nuevo.');
             }
         }
 
@@ -369,6 +382,8 @@
             
             const errorDiv = document.getElementById('error');
             const successDiv = document.getElementById('success');
+            const submitBtn = document.getElementById('submitBtn');
+            
             errorDiv.classList.add('hidden');
             successDiv.classList.add('hidden');
 
@@ -383,6 +398,10 @@
                     return;
                 }
             }
+
+            // Deshabilitar botón
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Registrando...';
 
             const formData = {
                 name: document.getElementById('name').value,
@@ -432,7 +451,7 @@
                     // Si es conductor, mostrar mensaje de éxito
                     successDiv.innerHTML = `
                         <div class="font-semibold mb-2">✅ Registro exitoso</div>
-                        <p class="text-sm">${data.message}</p>
+                        <p class="text-sm">${data.message || 'Tu cuenta será revisada y aprobada pronto.'}</p>
                         <a href="/" class="inline-block mt-3 text-blue-600 hover:text-blue-700 font-semibold">
                             Volver al login
                         </a>
@@ -447,10 +466,12 @@
             } catch (error) {
                 errorDiv.textContent = error.message;
                 errorDiv.classList.remove('hidden');
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Crear Cuenta';
             }
         });
     </script>
 <script src="/notifications.js"></script>
 </body>
 </html>
-<!-- v3.0 - Sistema completo: Cliente, Conductor y Dueño de Tienda -->
+<!-- v3.1 - Sistema completo con subida a Cloudinary -->
