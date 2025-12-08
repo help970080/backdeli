@@ -348,11 +348,9 @@
         }
 
         function handleLogout() {
-            if (confirm('¿Cerrar sesión?')) {
-                localStorage.removeItem('token');
-                localStorage.removeItem('user');
-                window.location.href = '/';
-            }
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            window.location.href = '/';
         }
 
         function formatCurrency(amount) {
@@ -365,15 +363,14 @@
         function changeTab(tab) {
             currentTab = tab;
             
-            // Cargar datos según el tab
-            if (tab === 'earnings' && !commissionsData) {
-                loadCommissions();
-            } else if (tab === 'drivers' && allDrivers.length === 0) {
+            if (tab === 'drivers' && allDrivers.length === 0) {
                 loadAllDrivers();
             } else if (tab === 'clients' && allClients.length === 0) {
                 loadAllClients();
             } else if (tab === 'stores' && allStores.length === 0) {
                 loadAllStores();
+            } else if (tab === 'commissions' && !commissionsData) {
+                loadCommissions();
             } else {
                 render();
             }
@@ -383,414 +380,348 @@
             const root = document.getElementById('root');
             
             root.innerHTML = `
-                <!-- Header -->
-                <div class="bg-white shadow-md mb-6">
-                    <div class="max-w-7xl mx-auto px-6 py-4">
+                <div class="container mx-auto px-4 py-6">
+                    <!-- Header -->
+                    <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
                         <div class="flex justify-between items-center">
                             <div class="flex items-center gap-3">
-                                <div class="text-3xl">📚</div>
+                                <div class="text-4xl">👨‍💼</div>
                                 <div>
-                                    <h1 class="text-2xl font-bold text-gray-800">Administrador</h1>
-                                    <p class="text-sm text-gray-600">${user ? user.name : 'Cargando...'}</p>
+                                    <h1 class="text-2xl font-bold text-gray-800">Panel Administrador</h1>
+                                    <p class="text-gray-600">${user ? user.name : 'Administrador'}</p>
                                 </div>
                             </div>
+                            
+                            <div class="flex gap-3">
+                                <button 
+                                    onclick="cleanOldImages()"
+                                    class="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-lg transition flex items-center gap-2"
+                                >
+                                    🧹 Limpiar Imágenes
+                                </button>
+                                <button 
+                                    onclick="handleLogout()"
+                                    class="bg-red-500 hover:bg-red-600 text-white px-6 py-2 rounded-lg transition"
+                                >
+                                    Cerrar Sesión
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tabs -->
+                    <div class="bg-white rounded-xl shadow-lg mb-6 overflow-hidden">
+                        <div class="flex border-b overflow-x-auto">
                             <button 
-                                onclick="handleLogout()"
-                                class="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg font-semibold transition"
+                                onclick="changeTab('dashboard')"
+                                class="flex-1 px-6 py-4 font-semibold transition whitespace-nowrap ${currentTab === 'dashboard' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}"
                             >
-                                Cerrar Sesión
+                                📊 Dashboard
+                            </button>
+                            <button 
+                                onclick="changeTab('earnings')"
+                                class="flex-1 px-6 py-4 font-semibold transition whitespace-nowrap ${currentTab === 'earnings' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}"
+                            >
+                                💰 Ganancias
+                            </button>
+                            <button 
+                                onclick="changeTab('drivers')"
+                                class="flex-1 px-6 py-4 font-semibold transition whitespace-nowrap ${currentTab === 'drivers' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}"
+                            >
+                                🚗 Conductores (${allDrivers.length})
+                            </button>
+                            <button 
+                                onclick="changeTab('clients')"
+                                class="flex-1 px-6 py-4 font-semibold transition whitespace-nowrap ${currentTab === 'clients' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}"
+                            >
+                                👥 Clientes (${allClients.length})
+                            </button>
+                            <button 
+                                onclick="changeTab('stores')"
+                                class="flex-1 px-6 py-4 font-semibold transition whitespace-nowrap ${currentTab === 'stores' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}"
+                            >
+                                🏪 Tiendas (${allStores.length})
+                            </button>
+                            <button 
+                                onclick="changeTab('commissions')"
+                                class="flex-1 px-6 py-4 font-semibold transition whitespace-nowrap ${currentTab === 'commissions' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}"
+                            >
+                                🏦 Comisiones ${commissionsData ? '(' + (commissionsData.summary.driversWithDebt || 0) + ')' : ''}
                             </button>
                         </div>
                     </div>
-                </div>
 
-                <!-- Navigation Tabs -->
-                <div class="max-w-7xl mx-auto px-6 mb-6">
-                    <div class="bg-white rounded-xl shadow-lg p-2 flex gap-2 overflow-x-auto">
-                        <button 
-                            onclick="changeTab('dashboard')"
-                            class="${currentTab === 'dashboard' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'} px-6 py-3 rounded-lg font-semibold transition whitespace-nowrap"
-                        >
-                            📊 Dashboard
-                        </button>
-                        <button 
-                            onclick="changeTab('earnings')"
-                            class="${currentTab === 'earnings' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'} px-6 py-3 rounded-lg font-semibold transition whitespace-nowrap"
-                        >
-                            🧾 Comisiones (${commissionsData && commissionsData.drivers ? commissionsData.drivers.length : 0})
-                        </button>
-                        <button 
-                            onclick="changeTab('drivers')"
-                            class="${currentTab === 'drivers' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'} px-6 py-3 rounded-lg font-semibold transition whitespace-nowrap"
-                        >
-                            🚗 Conductores (${stats ? stats.totalDrivers || 0 : 0})
-                        </button>
-                        <button 
-                            onclick="changeTab('clients')"
-                            class="${currentTab === 'clients' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'} px-6 py-3 rounded-lg font-semibold transition whitespace-nowrap"
-                        >
-                            👥 Clientes (${stats ? stats.totalClients || 0 : 0})
-                        </button>
-                        <button 
-                            onclick="changeTab('stores')"
-                            class="${currentTab === 'stores' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'} px-6 py-3 rounded-lg font-semibold transition whitespace-nowrap"
-                        >
-                            🏪 Tiendas (${stats ? stats.totalStores || 0 : 0})
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Content -->
-                <div class="max-w-7xl mx-auto px-6 pb-8">
-                    ${currentTab === 'dashboard' ? renderDashboard() : ''}
-                    ${currentTab === 'earnings' ? renderEarnings() : ''}
-                    ${currentTab === 'drivers' ? renderDrivers() : ''}
-                    ${currentTab === 'clients' ? renderClients() : ''}
-                    ${currentTab === 'stores' ? renderStores() : ''}
+                    ${renderTabContent()}
                 </div>
             `;
         }
 
+        function renderTabContent() {
+            switch(currentTab) {
+                case 'dashboard':
+                    return renderDashboard();
+                case 'earnings':
+                    return renderEarnings();
+                case 'drivers':
+                    return renderDrivers();
+                case 'clients':
+                    return renderClients();
+                case 'stores':
+                    return renderStores();
+                case 'commissions':
+                    return renderCommissions();
+                default:
+                    return renderDashboard();
+            }
+        }
+
         function renderDashboard() {
             return `
-                <div class="space-y-6">
-                    <!-- Stats Cards -->
-                    <div class="grid md:grid-cols-4 gap-6">
-                        <div class="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg p-6 text-white">
-                            <div class="flex items-center justify-between mb-2">
-                                <div class="text-3xl">🏪</div>
-                                <div class="text-sm opacity-80">Total</div>
-                            </div>
-                            <div class="text-3xl font-bold mb-1">${stats ? stats.totalStores || 0 : 0}</div>
-                            <div class="text-sm opacity-90">Tiendas</div>
-                        </div>
+                <!-- Estadísticas Generales -->
+                <div class="grid md:grid-cols-4 gap-6 mb-6">
+                    <div class="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg p-6 text-white">
+                        <div class="text-sm opacity-80">Total Tiendas</div>
+                        <div class="text-3xl font-bold mt-2">${stats?.totalStores || 0}</div>
+                    </div>
+                    <div class="bg-gradient-to-br from-green-500 to-green-600 rounded-lg shadow-lg p-6 text-white">
+                        <div class="text-sm opacity-80">Total Productos</div>
+                        <div class="text-3xl font-bold mt-2">${stats?.totalProducts || 0}</div>
+                    </div>
+                    <div class="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow-lg p-6 text-white">
+                        <div class="text-sm opacity-80">Total Pedidos</div>
+                        <div class="text-3xl font-bold mt-2">${stats?.totalOrders || 0}</div>
+                    </div>
+                    <div class="bg-gradient-to-br from-yellow-500 to-yellow-600 rounded-lg shadow-lg p-6 text-white">
+                        <div class="text-sm opacity-80">Pedidos Activos</div>
+                        <div class="text-3xl font-bold mt-2">${stats?.activeOrders || 0}</div>
+                    </div>
+                </div>
 
-                        <div class="bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-lg p-6 text-white">
-                            <div class="flex items-center justify-between mb-2">
-                                <div class="text-3xl">📦</div>
-                                <div class="text-sm opacity-80">Total</div>
-                            </div>
-                            <div class="text-3xl font-bold mb-1">${stats ? stats.totalProducts || 0 : 0}</div>
-                            <div class="text-sm opacity-90">Productos</div>
+                <!-- Resumen de Ganancias -->
+                <div class="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl shadow-xl p-8 mb-6 text-white">
+                    <div class="flex justify-between items-start mb-6">
+                        <div>
+                            <h2 class="text-2xl font-bold mb-2">💰 Ganancias de la Plataforma</h2>
+                            <p class="text-emerald-100">Comisiones generadas por entregas completadas</p>
                         </div>
-
-                        <div class="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl shadow-lg p-6 text-white">
-                            <div class="flex items-center justify-between mb-2">
-                                <div class="text-3xl">🛍️</div>
-                                <div class="text-sm opacity-80">Total</div>
-                            </div>
-                            <div class="text-3xl font-bold mb-1">${stats ? stats.totalOrders || 0 : 0}</div>
-                            <div class="text-sm opacity-90">Pedidos</div>
+                        <button 
+                            onclick="changeTab('earnings')"
+                            class="bg-white/20 hover:bg-white/30 px-6 py-2 rounded-lg font-semibold transition"
+                        >
+                            Ver Detalles →
+                        </button>
+                    </div>
+                    
+                    <div class="grid md:grid-cols-3 gap-6">
+                        <div class="bg-white/10 backdrop-blur-sm rounded-lg p-6">
+                            <div class="text-sm opacity-90 mb-2">💵 Total Generado</div>
+                            <div class="text-4xl font-bold">${formatCurrency(stats?.totalPlatformEarnings || 0)}</div>
+                            <div class="text-sm opacity-75 mt-2">${stats?.completedOrders || 0} pedidos completados</div>
                         </div>
-
-                        <div class="bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl shadow-lg p-6 text-white">
-                            <div class="flex items-center justify-between mb-2">
-                                <div class="text-3xl">⚡</div>
-                                <div class="text-sm opacity-80">Activos</div>
-                            </div>
-                            <div class="text-3xl font-bold mb-1">${stats ? stats.activeOrders || 0 : 0}</div>
-                            <div class="text-sm opacity-90">En Proceso</div>
+                        <div class="bg-white/10 backdrop-blur-sm rounded-lg p-6">
+                            <div class="text-sm opacity-90 mb-2">📅 Este Mes</div>
+                            <div class="text-4xl font-bold">${formatCurrency(stats?.earningsThisMonth || 0)}</div>
+                            <div class="text-sm opacity-75 mt-2">${stats?.ordersThisMonth || 0} pedidos</div>
+                        </div>
+                        <div class="bg-white/10 backdrop-blur-sm rounded-lg p-6">
+                            <div class="text-sm opacity-90 mb-2">🌟 Hoy</div>
+                            <div class="text-4xl font-bold">${formatCurrency(stats?.earningsToday || 0)}</div>
+                            <div class="text-sm opacity-75 mt-2">${stats?.ordersToday || 0} pedidos</div>
                         </div>
                     </div>
+                </div>
 
-                    <!-- Conductores Pendientes -->
-                    ${pendingDrivers.length > 0 ? `
-                        <div class="bg-white rounded-xl shadow-lg p-6">
-                            <div class="flex items-center gap-3 mb-6">
-                                <div class="text-3xl">⏳</div>
-                                <div>
-                                    <h2 class="text-2xl font-bold text-gray-800">
-                                        Conductores Pendientes de Aprobación
-                                    </h2>
-                                    <p class="text-gray-600">Revisa y aprueba nuevos conductores</p>
-                                </div>
-                            </div>
-
-                            <div class="space-y-4">
-                                ${pendingDrivers.map(driver => `
-                                    <div class="border border-gray-200 rounded-lg p-6 hover:shadow-md transition">
-                                        <div class="flex justify-between items-start mb-4">
-                                            <div class="flex-1">
-                                                <h3 class="text-xl font-bold text-gray-800 mb-2">${driver.name}</h3>
-                                                <div class="grid md:grid-cols-2 gap-3 text-sm text-gray-600">
-                                                    <div class="flex items-center gap-2">
-                                                        <span>📧</span>
-                                                        <span>${driver.email}</span>
-                                                    </div>
-                                                    <div class="flex items-center gap-2">
-                                                        <span>📱</span>
-                                                        <span>${driver.phone}</span>
-                                                    </div>
-                                                    <div class="flex items-center gap-2">
-                                                        <span>🚗</span>
-                                                        <span>${driver.vehicle || 'N/A'}</span>
-                                                    </div>
-                                                    <div class="flex items-center gap-2">
-                                                        <span>🪪</span>
-                                                        <span>${driver.license || 'N/A'}</span>
-                                                    </div>
-                                                </div>
-                                            </div>
+                <!-- Conductores Pendientes -->
+                ${pendingDrivers && pendingDrivers.length > 0 ? `
+                    <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-4">
+                            🚗 Conductores Pendientes de Aprobación (${pendingDrivers.length})
+                        </h2>
+                        
+                        <div class="grid md:grid-cols-2 gap-6">
+                            ${pendingDrivers.map(driver => `
+                                <div class="border rounded-lg p-4 bg-yellow-50 border-yellow-200">
+                                    <div class="flex justify-between items-start mb-3">
+                                        <div>
+                                            <h3 class="font-bold text-lg text-gray-800">${driver.name}</h3>
+                                            <p class="text-sm text-gray-600">${driver.email}</p>
+                                            <p class="text-sm text-gray-600">📱 ${driver.phone}</p>
                                         </div>
+                                        <span class="px-3 py-1 rounded text-xs font-semibold bg-yellow-200 text-yellow-800">
+                                            ⏳ Pendiente
+                                        </span>
+                                    </div>
+                                    
+                                    <div class="space-y-2 text-sm mb-4">
+                                        <div><strong>Vehículo:</strong> ${driver.vehicle || 'No especificado'}</div>
+                                        <div><strong>Licencia:</strong> ${driver.license || 'No especificada'}</div>
+                                        <div><strong>Registro:</strong> ${new Date(driver.createdAt).toLocaleDateString('es-MX')}</div>
+                                    </div>
 
-                                        <!-- Fotos -->
-                                        <div class="grid md:grid-cols-2 gap-4 mb-4">
+                                    ${driver.inePhoto || driver.vehiclePhoto ? `
+                                        <div class="grid grid-cols-2 gap-2 mb-4">
                                             ${driver.inePhoto ? `
-                                                <div class="border border-gray-200 rounded-lg p-3">
-                                                    <p class="text-sm font-semibold text-gray-700 mb-2">📄 INE</p>
-                                                    <img src="${driver.inePhoto}" alt="INE" class="w-full h-32 object-cover rounded">
+                                                <div>
+                                                    <p class="text-xs text-gray-600 mb-1">INE:</p>
+                                                    <img src="${driver.inePhoto}" alt="INE" class="w-full h-24 object-cover rounded border">
                                                 </div>
                                             ` : ''}
                                             ${driver.vehiclePhoto ? `
-                                                <div class="border border-gray-200 rounded-lg p-3">
-                                                    <p class="text-sm font-semibold text-gray-700 mb-2">🚗 Vehículo</p>
-                                                    <img src="${driver.vehiclePhoto}" alt="Vehículo" class="w-full h-32 object-cover rounded">
+                                                <div>
+                                                    <p class="text-xs text-gray-600 mb-1">Vehículo:</p>
+                                                    <img src="${driver.vehiclePhoto}" alt="Vehículo" class="w-full h-24 object-cover rounded border">
                                                 </div>
                                             ` : ''}
                                         </div>
-
-                                        <!-- Botones de acción -->
-                                        <div class="flex gap-3">
-                                            <button 
-                                                onclick="approveDriver(${driver.id})"
-                                                class="flex-1 bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-semibold transition"
-                                            >
-                                                ✅ Aprobar
-                                            </button>
-                                            <button 
-                                                onclick="rejectDriver(${driver.id})"
-                                                class="flex-1 bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg font-semibold transition"
-                                            >
-                                                ❌ Rechazar
-                                            </button>
-                                        </div>
+                                    ` : ''}
+                                    
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <button 
+                                            onclick="approveDriver(${driver.id})"
+                                            class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold transition"
+                                        >
+                                            ✓ Aprobar
+                                        </button>
+                                        <button 
+                                            onclick="rejectDriver(${driver.id})"
+                                            class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-semibold transition"
+                                        >
+                                            ✗ Rechazar
+                                        </button>
                                     </div>
-                                `).join('')}
-                            </div>
-                        </div>
-                    ` : `
-                        <div class="bg-green-50 border-l-4 border-green-500 rounded-lg p-6">
-                            <div class="flex items-center gap-3">
-                                <div class="text-3xl">✅</div>
-                                <div>
-                                    <h3 class="font-bold text-green-900 mb-1">Todo al día</h3>
-                                    <p class="text-green-800 text-sm">No hay conductores pendientes de aprobación</p>
                                 </div>
-                            </div>
-                        </div>
-                    `}
-
-                    <!-- Utilidades -->
-                    <div class="bg-white rounded-xl shadow-lg p-6">
-                        <h2 class="text-2xl font-bold text-gray-800 mb-6">🛠️ Utilidades</h2>
-                        <div class="grid md:grid-cols-2 gap-4">
-                            <button 
-                                onclick="cleanOldImages()"
-                                class="bg-yellow-600 hover:bg-yellow-700 text-white px-6 py-4 rounded-lg font-semibold transition text-left"
-                            >
-                                <div class="text-xl mb-1">🧹 Limpiar Imágenes Antiguas</div>
-                                <div class="text-sm opacity-90">Eliminar rutas /uploads/ y mantener Cloudinary</div>
-                            </button>
+                            `).join('')}
                         </div>
                     </div>
+                ` : `
+                    <div class="bg-white rounded-xl shadow-lg p-12 text-center mb-6">
+                        <div class="text-6xl mb-4">✅</div>
+                        <h3 class="text-xl font-bold text-gray-800 mb-2">No hay conductores pendientes</h3>
+                        <p class="text-gray-600">Todos los conductores han sido procesados</p>
+                    </div>
+                `}
+
+                <!-- Botón de Refrescar -->
+                <div class="text-center">
+                    <button 
+                        onclick="loadStats(); loadPendingDrivers();" 
+                        class="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-semibold transition"
+                    >
+                        🔄 Actualizar
+                    </button>
                 </div>
             `;
         }
 
         function renderEarnings() {
-            // Si no hay datos de comisiones, mostrar loading
-            if (!commissionsData) {
-                return `
-                    <div class="bg-white rounded-xl shadow-lg p-12">
-                        <div class="text-center">
-                            <div class="text-6xl mb-4">⏳</div>
-                            <p class="text-xl text-gray-600">Cargando información de comisiones...</p>
-                        </div>
-                    </div>
-                `;
-            }
-
-            const summary = commissionsData.summary || {};
-            const drivers = commissionsData.drivers || [];
-
             return `
                 <div class="space-y-6">
-                    <!-- Resumen de Comisiones -->
-                    <div class="grid md:grid-cols-4 gap-6">
-                        <div class="bg-green-600 rounded-xl shadow-lg p-6 text-white">
-                            <div class="text-sm opacity-90 mb-2">💰 Comisiones Pendientes</div>
-                            <div class="text-3xl font-bold">${formatCurrency(summary.totalPending || 0)}</div>
-                            <div class="text-sm opacity-80 mt-2">${summary.driversWithDebt || 0} conductores deben</div>
+                    <!-- Resumen Principal -->
+                    <div class="bg-gradient-to-br from-green-600 to-emerald-700 rounded-xl shadow-xl p-8 text-white">
+                        <h2 class="text-3xl font-bold mb-2">💰 Ganancias Totales de la Plataforma</h2>
+                        <div class="text-5xl font-bold mt-4">${formatCurrency(stats?.totalPlatformEarnings || 0)}</div>
+                        <p class="text-green-100 mt-2">De ${stats?.completedOrders || 0} pedidos completados</p>
+                    </div>
+
+                    <!-- Desglose de Ganancias -->
+                    <div class="grid md:grid-cols-3 gap-6">
+                        <div class="bg-white rounded-xl shadow-lg p-6">
+                            <div class="flex items-center gap-3 mb-4">
+                                <div class="text-4xl">📅</div>
+                                <div>
+                                    <div class="text-sm text-gray-600">Ganancias del Mes</div>
+                                    <div class="text-2xl font-bold text-gray-800">${formatCurrency(stats?.earningsThisMonth || 0)}</div>
+                                </div>
+                            </div>
+                            <div class="text-sm text-gray-600">
+                                ${stats?.ordersThisMonth || 0} pedidos este mes
+                            </div>
+                            <div class="mt-4 pt-4 border-t">
+                                <div class="text-xs text-gray-500">Promedio por pedido</div>
+                                <div class="text-lg font-semibold text-green-600">
+                                    ${formatCurrency((stats?.earningsThisMonth || 0) / (stats?.ordersThisMonth || 1))}
+                                </div>
+                            </div>
                         </div>
 
-                        <div class="bg-blue-600 rounded-xl shadow-lg p-6 text-white">
-                            <div class="text-sm opacity-90 mb-2">🚗 Conductores Activos</div>
-                            <div class="text-3xl font-bold">${summary.activeDrivers || 0}</div>
-                            <div class="text-sm opacity-80 mt-2">De ${summary.totalDrivers || 0} totales</div>
+                        <div class="bg-white rounded-xl shadow-lg p-6">
+                            <div class="flex items-center gap-3 mb-4">
+                                <div class="text-4xl">🌟</div>
+                                <div>
+                                    <div class="text-sm text-gray-600">Ganancias de Hoy</div>
+                                    <div class="text-2xl font-bold text-gray-800">${formatCurrency(stats?.earningsToday || 0)}</div>
+                                </div>
+                            </div>
+                            <div class="text-sm text-gray-600">
+                                ${stats?.ordersToday || 0} pedidos hoy
+                            </div>
+                            <div class="mt-4 pt-4 border-t">
+                                <div class="text-xs text-gray-500">Promedio por pedido</div>
+                                <div class="text-lg font-semibold text-green-600">
+                                    ${formatCurrency((stats?.earningsToday || 0) / (stats?.ordersToday || 1))}
+                                </div>
+                            </div>
                         </div>
 
-                        <div class="bg-red-600 rounded-xl shadow-lg p-6 text-white">
-                            <div class="text-sm opacity-90 mb-2">⚠️ Conductores Morosos</div>
-                            <div class="text-3xl font-bold">${summary.overdueDrivers || 0}</div>
-                            <div class="text-sm opacity-80 mt-2">+7 días de retraso</div>
-                        </div>
-
-                        <div class="bg-purple-600 rounded-xl shadow-lg p-6 text-white">
-                            <div class="text-sm opacity-90 mb-2">🚫 Suspendidos</div>
-                            <div class="text-3xl font-bold">${summary.suspendedDrivers || 0}</div>
-                            <div class="text-sm opacity-80 mt-2">No pueden trabajar</div>
+                        <div class="bg-white rounded-xl shadow-lg p-6">
+                            <div class="flex items-center gap-3 mb-4">
+                                <div class="text-4xl">📊</div>
+                                <div>
+                                    <div class="text-sm text-gray-600">Promedio Total</div>
+                                    <div class="text-2xl font-bold text-gray-800">
+                                        ${formatCurrency((stats?.totalPlatformEarnings || 0) / (stats?.completedOrders || 1))}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="text-sm text-gray-600">
+                                Por pedido completado
+                            </div>
+                            <div class="mt-4 pt-4 border-t">
+                                <div class="text-xs text-gray-500">Total de pedidos</div>
+                                <div class="text-lg font-semibold text-blue-600">
+                                    ${stats?.completedOrders || 0}
+                                </div>
+                            </div>
                         </div>
                     </div>
 
-                    <!-- Gestión de Comisiones por Conductor -->
+                    <!-- Estadísticas Adicionales -->
                     <div class="bg-white rounded-xl shadow-lg p-6">
-                        <div class="flex justify-between items-center mb-6">
-                            <h2 class="text-2xl font-bold text-gray-800">
-                                💼 Gestión de Comisiones por Conductor
-                            </h2>
-                            <button 
-                                onclick="loadCommissions()"
-                                class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition flex items-center gap-2"
-                            >
-                                🔄 Actualizar
-                            </button>
+                        <h3 class="text-xl font-bold text-gray-800 mb-4">📈 Estadísticas de la Plataforma</h3>
+                        <div class="grid md:grid-cols-4 gap-4">
+                            <div class="bg-blue-50 rounded-lg p-4">
+                                <div class="text-sm text-gray-600 mb-1">Total Conductores</div>
+                                <div class="text-2xl font-bold text-blue-600">${stats?.totalDrivers || 0}</div>
+                            </div>
+                            <div class="bg-green-50 rounded-lg p-4">
+                                <div class="text-sm text-gray-600 mb-1">Total Clientes</div>
+                                <div class="text-2xl font-bold text-green-600">${stats?.totalClients || 0}</div>
+                            </div>
+                            <div class="bg-purple-50 rounded-lg p-4">
+                                <div class="text-sm text-gray-600 mb-1">Total Tiendas</div>
+                                <div class="text-2xl font-bold text-purple-600">${stats?.totalStores || 0}</div>
+                            </div>
+                            <div class="bg-yellow-50 rounded-lg p-4">
+                                <div class="text-sm text-gray-600 mb-1">Conductores Pendientes</div>
+                                <div class="text-2xl font-bold text-yellow-600">${stats?.pendingDrivers || 0}</div>
+                            </div>
                         </div>
-
-                        ${drivers.length === 0 ? `
-                            <div class="text-center py-12">
-                                <div class="text-6xl mb-4">📊</div>
-                                <p class="text-xl text-gray-600 mb-2">No hay conductores registrados</p>
-                                <p class="text-gray-500">Cuando se registren conductores, aparecerán aquí</p>
-                            </div>
-                        ` : `
-                            <div class="space-y-4">
-                                ${drivers.map(driver => {
-                                    const statusColors = {
-                                        'overdue': 'border-red-500 bg-red-50',
-                                        'active_debt': 'border-yellow-500 bg-yellow-50',
-                                        'suspended': 'border-gray-500 bg-gray-50',
-                                        'clear': 'border-green-500 bg-green-50',
-                                        'pending': 'border-blue-500 bg-blue-50'
-                                    };
-                                    
-                                    const statusTexts = {
-                                        'overdue': '🚨 MOROSO (+7 días)',
-                                        'active_debt': '⏳ Debe esta semana',
-                                        'suspended': '🚫 SUSPENDIDO',
-                                        'clear': '✅ Al corriente',
-                                        'pending': '⏳ Pendiente aprobación'
-                                    };
-                                    
-                                    const statusColor = statusColors[driver.status] || 'border-gray-500 bg-gray-50';
-                                    const statusText = statusTexts[driver.status] || driver.status;
-                                    
-                                    return `
-                                        <div class="border-l-4 ${statusColor} rounded-lg p-4">
-                                            <div class="flex justify-between items-start mb-3">
-                                                <div class="flex-1">
-                                                    <div class="flex items-center gap-3 mb-2">
-                                                        <h3 class="font-bold text-lg text-gray-800">${driver.name}</h3>
-                                                        <span class="px-3 py-1 rounded-full text-xs font-semibold ${
-                                                            driver.status === 'overdue' ? 'bg-red-200 text-red-800' :
-                                                            driver.status === 'active_debt' ? 'bg-yellow-200 text-yellow-800' :
-                                                            driver.status === 'suspended' ? 'bg-gray-200 text-gray-800' :
-                                                            driver.status === 'clear' ? 'bg-green-200 text-green-800' :
-                                                            'bg-blue-200 text-blue-800'
-                                                        }">
-                                                            ${statusText}
-                                                        </span>
-                                                    </div>
-                                                    <div class="grid md:grid-cols-2 gap-2 text-sm text-gray-600">
-                                                        <div>📧 ${driver.email}</div>
-                                                        <div>📱 ${driver.phone}</div>
-                                                        <div>🚗 Entregas: <strong>${driver.totalDeliveries}</strong></div>
-                                                        <div>💰 Balance: <strong>${formatCurrency(driver.balance)}</strong></div>
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <!-- Información de Comisiones -->
-                                            <div class="bg-white rounded-lg p-4 mb-3">
-                                                <div class="grid md:grid-cols-3 gap-4 text-sm">
-                                                    <div>
-                                                        <div class="text-gray-600 mb-1">Comisión Esta Semana</div>
-                                                        <div class="text-2xl font-bold ${driver.weekCommissions > 0 ? 'text-orange-600' : 'text-green-600'}">
-                                                            ${formatCurrency(driver.weekCommissions)}
-                                                        </div>
-                                                    </div>
-                                                    <div>
-                                                        <div class="text-gray-600 mb-1">Comisiones Históricas</div>
-                                                        <div class="text-xl font-semibold text-gray-700">
-                                                            ${formatCurrency(driver.totalCommissions)}
-                                                        </div>
-                                                    </div>
-                                                    <div>
-                                                        <div class="text-gray-600 mb-1">Último Pago</div>
-                                                        <div class="text-sm ${driver.lastPayment ? 'text-gray-700' : 'text-red-600'}">
-                                                            ${driver.lastPayment ? `Hace ${driver.daysSincePayment} días` : 'Nunca ha pagado'}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <!-- Botones de Acción -->
-                                            <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
-                                                ${driver.weekCommissions > 0 ? `
-                                                    <button onclick="registerPayment(${driver.id}, '${driver.name}', ${driver.weekCommissions})"
-                                                        class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold transition text-sm">
-                                                        💰 Registrar Pago
-                                                    </button>
-                                                ` : `
-                                                    <button disabled class="bg-gray-300 text-gray-500 px-4 py-2 rounded-lg font-semibold text-sm cursor-not-allowed">
-                                                        ✅ Sin Deuda
-                                                    </button>
-                                                `}
-                                                
-                                                ${!driver.suspended ? `
-                                                    <button onclick="suspendDriver(${driver.id}, '${driver.name}')"
-                                                        class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-semibold transition text-sm">
-                                                        🚫 Suspender
-                                                    </button>
-                                                ` : `
-                                                    <button onclick="activateDriver(${driver.id}, '${driver.name}')"
-                                                        class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold transition text-sm">
-                                                        ✅ Reactivar
-                                                    </button>
-                                                `}
-                                                
-                                                <button onclick="viewDriverOrders(${driver.id}, '${driver.name}')"
-                                                    class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-semibold transition text-sm">
-                                                    📦 Ver Pedidos
-                                                </button>
-                                                
-                                                <button onclick="alert('Historial próximamente')"
-                                                    class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg font-semibold transition text-sm">
-                                                    📋 Historial
-                                                </button>
-                                            </div>
-                                        </div>
-                                    `;
-                                }).join('')}
-                            </div>
-                        `}
                     </div>
 
-                    <!-- Información sobre Sistema de Comisiones -->
+                    <!-- Información sobre Comisiones -->
                     <div class="bg-blue-50 border-l-4 border-blue-500 rounded-lg p-6">
                         <div class="flex items-start gap-3">
                             <div class="text-3xl">ℹ️</div>
                             <div>
-                                <h4 class="font-bold text-blue-900 mb-2">Sistema de Cobro Semanal</h4>
+                                <h4 class="font-bold text-blue-900 mb-2">¿Cómo se calculan las ganancias?</h4>
                                 <p class="text-blue-800 text-sm mb-2">
-                                    Los conductores trabajan durante la semana y pagan sus comisiones al final del período (Domingo a Domingo).
+                                    Las ganancias de la plataforma provienen de las comisiones cobradas en cada pedido entregado.
                                 </p>
                                 <ul class="text-blue-800 text-sm space-y-1">
-                                    <li>• <strong>Comisión:</strong> 20% del fee de entrega</li>
-                                    <li>• <strong>Corte semanal:</strong> Domingo 23:59</li>
-                                    <li>• <strong>Plazo de pago:</strong> 7 días (Hasta siguiente Domingo)</li>
-                                    <li>• <strong>Morosidad:</strong> +7 días sin pagar</li>
-                                    <li>• <strong>Suspensión:</strong> Bloqueamos recepción de nuevos pedidos</li>
-                                    <li>• <strong>Reactivación:</strong> Al registrar el pago completo</li>
+                                    <li>• La comisión se calcula automáticamente al completar cada pedido</li>
+                                    <li>• Solo se contabilizan los pedidos con estado "delivered"</li>
+                                    <li>• Los conductores reciben el 80% del fee de entrega</li>
+                                    <li>• La plataforma retiene el 20% como comisión</li>
                                 </ul>
                             </div>
                         </div>
@@ -914,7 +845,7 @@
                                         <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Email</th>
                                         <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Teléfono</th>
                                         <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Dirección</th>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Registro</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Fecha Registro</th>
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-gray-200">
@@ -966,36 +897,236 @@
                             <p class="text-gray-500">Cargando tiendas...</p>
                         </div>
                     ` : `
-                        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            ${allStores.map(store => `
-                                <div class="border border-gray-200 rounded-lg p-4 hover:shadow-lg transition">
-                                    ${store.image ? `
-                                        <img src="${store.image}" alt="${store.name}" class="w-full h-40 object-cover rounded-lg mb-4">
-                                    ` : `
-                                        <div class="w-full h-40 bg-gray-200 rounded-lg mb-4 flex items-center justify-center text-4xl">
-                                            🏪
-                                        </div>
-                                    `}
-                                    <h3 class="font-bold text-lg text-gray-800 mb-2">${store.name}</h3>
-                                    <p class="text-sm text-gray-600 mb-3 line-clamp-2">${store.description || 'Sin descripción'}</p>
-                                    <div class="space-y-2 text-sm text-gray-600">
-                                        <div class="flex items-center gap-2">
-                                            <span>📍</span>
-                                            <span class="line-clamp-1">${store.address || 'Sin dirección'}</span>
-                                        </div>
-                                        <div class="flex items-center gap-2">
-                                            <span>👤</span>
-                                            <span>${store.owner ? store.owner.name : 'Sin propietario'}</span>
-                                        </div>
-                                        <div class="flex items-center gap-2">
-                                            <span>📅</span>
-                                            <span>${new Date(store.createdAt).toLocaleDateString('es-MX')}</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            `).join('')}
+                        <div class="overflow-x-auto">
+                            <table class="w-full">
+                                <thead class="bg-gray-100">
+                                    <tr>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">ID</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Tienda</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Categoría</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Dirección</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Propietario</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Contacto</th>
+                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Fecha Registro</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-200">
+                                    ${allStores.map(store => `
+                                        <tr class="hover:bg-gray-50">
+                                            <td class="px-4 py-3 text-sm">${store.id}</td>
+                                            <td class="px-4 py-3">
+                                                <div class="flex items-center gap-3">
+                                                    ${store.image ? `
+                                                        <img src="${store.image}" alt="${store.name}" class="w-12 h-12 object-cover rounded">
+                                                    ` : `
+                                                        <div class="w-12 h-12 bg-gray-200 rounded flex items-center justify-center text-2xl">
+                                                            🏪
+                                                        </div>
+                                                    `}
+                                                    <div>
+                                                        <div class="font-semibold text-gray-800">${store.name}</div>
+                                                        <div class="text-xs text-gray-500">${store.description ? store.description.substring(0, 40) + '...' : 'Sin descripción'}</div>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td class="px-4 py-3 text-sm text-gray-600">${store.category || 'General'}</td>
+                                            <td class="px-4 py-3 text-sm text-gray-600">${store.address || 'No especificada'}</td>
+                                            <td class="px-4 py-3">
+                                                <div class="font-semibold text-sm text-gray-800">${store.owner ? store.owner.name : 'N/A'}</div>
+                                                <div class="text-xs text-gray-500">${store.owner ? store.owner.email : ''}</div>
+                                            </td>
+                                            <td class="px-4 py-3 text-sm text-gray-600">${store.phone || store.owner?.phone || 'N/A'}</td>
+                                            <td class="px-4 py-3 text-sm text-gray-600">${new Date(store.createdAt).toLocaleDateString('es-MX')}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
                         </div>
                     `}
+                </div>
+            `;
+        }
+
+        function renderCommissions() {
+            if (!commissionsData) {
+                return '<div class="text-center py-12"><p class="text-gray-500">Cargando comisiones...</p></div>';
+            }
+            
+            const { drivers, summary } = commissionsData;
+            
+            return `
+                <div class="space-y-6">
+                    <!-- Resumen General -->
+                    <div class="grid md:grid-cols-4 gap-6">
+                        <div class="bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl shadow-lg p-6 text-white">
+                            <div class="text-sm opacity-90 mb-2">💰 Comisiones Pendientes</div>
+                            <div class="text-3xl font-bold">${formatCurrency(summary.totalPendingCommissions || 0)}</div>
+                            <div class="text-sm opacity-75 mt-2">${summary.driversWithDebt || 0} conductores deben</div>
+                        </div>
+                        
+                        <div class="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg p-6 text-white">
+                            <div class="text-sm opacity-90 mb-2">👥 Conductores Activos</div>
+                            <div class="text-3xl font-bold">${summary.activeDrivers || 0}</div>
+                            <div class="text-sm opacity-75 mt-2">De ${summary.totalDrivers || 0} totales</div>
+                        </div>
+                        
+                        <div class="bg-gradient-to-br from-red-500 to-red-600 rounded-xl shadow-lg p-6 text-white">
+                            <div class="text-sm opacity-90 mb-2">⚠️ Conductores Morosos</div>
+                            <div class="text-3xl font-bold">${summary.overdueDrivers || 0}</div>
+                            <div class="text-sm opacity-75 mt-2">+7 días de retraso</div>
+                        </div>
+                        
+                        <div class="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl shadow-lg p-6 text-white">
+                            <div class="text-sm opacity-90 mb-2">🚫 Suspendidos</div>
+                            <div class="text-3xl font-bold">${summary.suspendedDrivers || 0}</div>
+                            <div class="text-sm opacity-75 mt-2">No pueden trabajar</div>
+                        </div>
+                    </div>
+
+                    <!-- Tabla de Conductores -->
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <div class="flex justify-between items-center mb-6">
+                            <h2 class="text-2xl font-bold text-gray-800">👥 Gestión de Comisiones por Conductor</h2>
+                            <button onclick="loadCommissions()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-semibold transition">
+                                🔄 Actualizar
+                            </button>
+                        </div>
+
+                        ${drivers.length === 0 ? `
+                            <div class="text-center py-12"><p class="text-gray-500">No hay conductores registrados</p></div>
+                        ` : `
+                            <div class="space-y-4">
+                                ${drivers.map(driver => {
+                                    const statusColors = {
+                                        'overdue': 'bg-red-100 border-red-500',
+                                        'active_debt': 'bg-yellow-100 border-yellow-500',
+                                        'suspended': 'bg-gray-100 border-gray-500',
+                                        'clear': 'bg-green-100 border-green-500',
+                                        'pending': 'bg-blue-100 border-blue-500'
+                                    };
+                                    
+                                    const statusTexts = {
+                                        'overdue': '🚨 MOROSO (+7 días)',
+                                        'active_debt': '⏳ Debe esta semana',
+                                        'suspended': '🚫 SUSPENDIDO',
+                                        'clear': '✅ Al corriente',
+                                        'pending': '⏳ Pendiente aprobación'
+                                    };
+                                    
+                                    const statusColor = statusColors[driver.status] || 'bg-gray-100 border-gray-500';
+                                    const statusText = statusTexts[driver.status] || driver.status;
+                                    
+                                    return `
+                                        <div class="border-l-4 ${statusColor} rounded-lg p-4">
+                                            <div class="flex justify-between items-start mb-3">
+                                                <div class="flex-1">
+                                                    <div class="flex items-center gap-3 mb-2">
+                                                        <h3 class="font-bold text-lg text-gray-800">${driver.name}</h3>
+                                                        <span class="px-3 py-1 rounded-full text-xs font-semibold ${
+                                                            driver.status === 'overdue' ? 'bg-red-200 text-red-800' :
+                                                            driver.status === 'active_debt' ? 'bg-yellow-200 text-yellow-800' :
+                                                            driver.status === 'suspended' ? 'bg-gray-200 text-gray-800' :
+                                                            driver.status === 'clear' ? 'bg-green-200 text-green-800' :
+                                                            'bg-blue-200 text-blue-800'
+                                                        }">
+                                                            ${statusText}
+                                                        </span>
+                                                    </div>
+                                                    <div class="grid md:grid-cols-2 gap-2 text-sm text-gray-600">
+                                                        <div>📧 ${driver.email}</div>
+                                                        <div>📱 ${driver.phone}</div>
+                                                        <div>🚗 Entregas: <strong>${driver.totalDeliveries}</strong></div>
+                                                        <div>💰 Balance: <strong>${formatCurrency(driver.balance)}</strong></div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <!-- Información de Comisiones -->
+                                            <div class="bg-white rounded-lg p-4 mb-3">
+                                                <div class="grid md:grid-cols-3 gap-4 text-sm">
+                                                    <div>
+                                                        <div class="text-gray-600 mb-1">Comisión Esta Semana</div>
+                                                        <div class="text-2xl font-bold ${driver.weekCommissions > 0 ? 'text-orange-600' : 'text-green-600'}">
+                                                            ${formatCurrency(driver.weekCommissions)}
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <div class="text-gray-600 mb-1">Comisiones Históricas</div>
+                                                        <div class="text-xl font-semibold text-gray-700">
+                                                            ${formatCurrency(driver.totalCommissions)}
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <div class="text-gray-600 mb-1">Último Pago</div>
+                                                        <div class="text-sm ${driver.lastPayment ? 'text-gray-700' : 'text-red-600'}">
+                                                            ${driver.lastPayment ? `Hace ${driver.daysSincePayment} días` : 'Nunca ha pagado'}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <!-- Botones de Acción -->
+                                            <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                                ${driver.weekCommissions > 0 ? `
+                                                    <button onclick="registerPayment(${driver.id}, '${driver.name}', ${driver.weekCommissions})"
+                                                        class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold transition text-sm">
+                                                        💰 Registrar Pago
+                                                    </button>
+                                                ` : `
+                                                    <button disabled class="bg-gray-300 text-gray-500 px-4 py-2 rounded-lg font-semibold text-sm cursor-not-allowed">
+                                                        ✅ Sin Deuda
+                                                    </button>
+                                                `}
+                                                
+                                                ${!driver.suspended ? `
+                                                    <button onclick="suspendDriver(${driver.id}, '${driver.name}')"
+                                                        class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-semibold transition text-sm">
+                                                        🚫 Suspender
+                                                    </button>
+                                                ` : `
+                                                    <button onclick="activateDriver(${driver.id}, '${driver.name}')"
+                                                        class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold transition text-sm">
+                                                        ✅ Reactivar
+                                                    </button>
+                                                `}
+                                                
+                                                <button onclick="viewDriverOrders(${driver.id}, '${driver.name}')"
+                                                    class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-semibold transition text-sm">
+                                                    📦 Ver Pedidos
+                                                </button>
+                                                
+                                                <button onclick="alert('Historial próximamente')"
+                                                    class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg font-semibold transition text-sm">
+                                                    📋 Historial
+                                                </button>
+                                            </div>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        `}
+                    </div>
+
+                    <!-- Información sobre Sistema de Comisiones -->
+                    <div class="bg-blue-50 border-l-4 border-blue-500 rounded-lg p-6">
+                        <div class="flex items-start gap-3">
+                            <div class="text-3xl">ℹ️</div>
+                            <div>
+                                <h4 class="font-bold text-blue-900 mb-2">Sistema de Cobro Semanal</h4>
+                                <p class="text-blue-800 text-sm mb-2">
+                                    Los conductores trabajan durante la semana y pagan sus comisiones al final del período (Domingo a Domingo).
+                                </p>
+                                <ul class="text-blue-800 text-sm space-y-1">
+                                    <li>• <strong>Comisión:</strong> 20% del fee de entrega</li>
+                                    <li>• <strong>Corte semanal:</strong> Domingo 23:59</li>
+                                    <li>• <strong>Plazo de pago:</strong> 7 días (Hasta siguiente Domingo)</li>
+                                    <li>• <strong>Morosidad:</strong> +7 días sin pagar</li>
+                                    <li>• <strong>Suspensión:</strong> Bloqueamos recepción de nuevos pedidos</li>
+                                    <li>• <strong>Reactivación:</strong> Al registrar el pago completo</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             `;
         }

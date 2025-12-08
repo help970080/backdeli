@@ -153,8 +153,9 @@
                     </button>
                     <div id="inePreview" class="mt-3 hidden">
                         <img id="inePreviewImg" class="w-full h-48 object-cover rounded-lg" />
-                        <p id="ineStatus" class="text-sm text-gray-600 mt-2 text-center">Preparando subida...</p>
+                        <p class="text-sm text-green-600 mt-2 text-center">✓ Foto cargada</p>
                     </div>
+                    <input type="hidden" id="inePhotoUrl" />
                 </div>
 
                 <!-- FOTO DEL VEHÍCULO -->
@@ -178,25 +179,37 @@
                     </button>
                     <div id="vehiclePreview" class="mt-3 hidden">
                         <img id="vehiclePreviewImg" class="w-full h-48 object-cover rounded-lg" />
-                        <p id="vehicleStatus" class="text-sm text-gray-600 mt-2 text-center">Preparando subida...</p>
+                        <p class="text-sm text-green-600 mt-2 text-center">✓ Foto cargada</p>
                     </div>
+                    <input type="hidden" id="vehiclePhotoUrl" />
                 </div>
             </div>
 
             <!-- Campos específicos de tienda -->
             <div id="storeFields" class="hidden space-y-4">
+                <div class="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
+                    <p class="text-sm text-green-800">
+                        🏪 Una vez registrado, podrás crear tu tienda y agregar productos desde tu panel.
+                    </p>
+                </div>
+
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Nombre del Negocio *</label>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        Nombre del negocio (opcional)
+                    </label>
                     <input 
                         type="text" 
                         id="businessName"
                         class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                        placeholder="Mi Tienda"
+                        placeholder="Ej: Tacos El Güero"
                     />
+                    <p class="text-xs text-gray-500 mt-1">Puedes crear tu tienda después del registro</p>
                 </div>
 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Dirección del Negocio *</label>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        Dirección del negocio (opcional)
+                    </label>
                     <input 
                         type="text" 
                         id="businessAddress"
@@ -206,24 +219,29 @@
                 </div>
 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Tipo de Negocio *</label>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        Tipo de negocio
+                    </label>
                     <select 
                         id="businessType"
                         class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
                     >
-                        <option value="">Selecciona...</option>
-                        <option value="restaurant">Restaurante</option>
-                        <option value="coffee">Cafetería</option>
-                        <option value="grocery">Abarrotes</option>
-                        <option value="pharmacy">Farmacia</option>
-                        <option value="other">Otro</option>
+                        <option value="">Seleccionar...</option>
+                        <option value="Mexicana">Comida Mexicana</option>
+                        <option value="Italiana">Comida Italiana</option>
+                        <option value="Japonesa">Comida Japonesa</option>
+                        <option value="China">Comida China</option>
+                        <option value="Americana">Comida Americana</option>
+                        <option value="Postres">Postres</option>
+                        <option value="Bebidas">Bebidas</option>
+                        <option value="Abarrotes">Abarrotes</option>
+                        <option value="Otro">Otro</option>
                     </select>
                 </div>
             </div>
 
             <button 
                 type="submit" 
-                id="submitBtn"
                 class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition"
             >
                 Crear Cuenta
@@ -233,37 +251,36 @@
         <div id="error" class="mt-4 hidden p-3 bg-red-100 text-red-700 rounded-lg text-sm"></div>
         <div id="success" class="mt-4 hidden p-3 bg-green-100 text-green-700 rounded-lg text-sm"></div>
         
-        <div class="mt-6 text-center border-t border-gray-200 pt-6">
+        <div class="mt-4 text-center">
             <p class="text-gray-600 text-sm">¿Ya tienes cuenta?</p>
             <a href="/" class="text-blue-600 hover:text-blue-700 font-semibold">
-                Iniciar sesión aquí
+                Iniciar sesión
             </a>
         </div>
     </div>
 
     <script>
         let currentRole = 'client';
-        let inePhotoFile = null;
-        let vehiclePhotoFile = null;
+        let inePhotoUploaded = false;
+        let vehiclePhotoUploaded = false;
 
         function selectRole(role) {
             currentRole = role;
             document.getElementById('role').value = role;
 
-            // Reset button styles
             const clientBtn = document.getElementById('clientBtn');
             const driverBtn = document.getElementById('driverBtn');
             const storeBtn = document.getElementById('storeBtn');
-
-            clientBtn.className = 'py-3 rounded-lg font-semibold transition bg-gray-200 text-gray-700 hover:bg-gray-300 text-sm';
-            driverBtn.className = 'py-3 rounded-lg font-semibold transition bg-gray-200 text-gray-700 hover:bg-gray-300 text-sm';
-            storeBtn.className = 'py-3 rounded-lg font-semibold transition bg-gray-200 text-gray-700 hover:bg-gray-300 text-sm';
-
-            // Hide all fields
             const clientFields = document.getElementById('clientFields');
             const driverFields = document.getElementById('driverFields');
             const storeFields = document.getElementById('storeFields');
 
+            // Reset todos los botones
+            clientBtn.className = 'py-3 rounded-lg font-semibold transition bg-gray-200 text-gray-700 hover:bg-gray-300 text-sm';
+            driverBtn.className = 'py-3 rounded-lg font-semibold transition bg-gray-200 text-gray-700 hover:bg-gray-300 text-sm';
+            storeBtn.className = 'py-3 rounded-lg font-semibold transition bg-gray-200 text-gray-700 hover:bg-gray-300 text-sm';
+
+            // Ocultar todos los campos específicos
             clientFields.classList.add('hidden');
             driverFields.classList.add('hidden');
             storeFields.classList.add('hidden');
@@ -272,73 +289,39 @@
                 clientBtn.className = 'py-3 rounded-lg font-semibold transition bg-blue-600 text-white text-sm';
                 clientFields.classList.remove('hidden');
                 
+                // Remover required de otros campos
                 document.getElementById('vehicle').removeAttribute('required');
                 document.getElementById('license').removeAttribute('required');
-                inePhotoFile = null;
-                vehiclePhotoFile = null;
+                inePhotoUploaded = false;
+                vehiclePhotoUploaded = false;
             } else if (role === 'driver') {
                 driverBtn.className = 'py-3 rounded-lg font-semibold transition bg-blue-600 text-white text-sm';
                 driverFields.classList.remove('hidden');
                 
+                // Agregar required a campos de conductor
                 document.getElementById('vehicle').setAttribute('required', 'required');
                 document.getElementById('license').setAttribute('required', 'required');
             } else if (role === 'store_owner') {
                 storeBtn.className = 'py-3 rounded-lg font-semibold transition bg-blue-600 text-white text-sm';
                 storeFields.classList.remove('hidden');
                 
+                // Remover required de campos de conductor
                 document.getElementById('vehicle').removeAttribute('required');
                 document.getElementById('license').removeAttribute('required');
-                inePhotoFile = null;
-                vehiclePhotoFile = null;
+                inePhotoUploaded = false;
+                vehiclePhotoUploaded = false;
             }
-        }
-
-        // Función para comprimir imagen
-        function compressImage(file, maxWidth = 1200, quality = 0.7) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.readAsDataURL(file);
-                reader.onload = (event) => {
-                    const img = new Image();
-                    img.src = event.target.result;
-                    img.onload = () => {
-                        const canvas = document.createElement('canvas');
-                        let width = img.width;
-                        let height = img.height;
-
-                        // Calcular nuevas dimensiones
-                        if (width > maxWidth) {
-                            height = (height * maxWidth) / width;
-                            width = maxWidth;
-                        }
-
-                        canvas.width = width;
-                        canvas.height = height;
-
-                        const ctx = canvas.getContext('2d');
-                        ctx.drawImage(img, 0, 0, width, height);
-
-                        // Convertir a blob
-                        canvas.toBlob(
-                            (blob) => {
-                                resolve(new File([blob], file.name, {
-                                    type: 'image/jpeg',
-                                    lastModified: Date.now()
-                                }));
-                            },
-                            'image/jpeg',
-                            quality
-                        );
-                    };
-                    img.onerror = reject;
-                };
-                reader.onerror = reject;
-            });
         }
 
         async function handleFileSelect(event, type) {
             const file = event.target.files[0];
             if (!file) return;
+
+            // Validar tamaño (max 5MB)
+            if (file.size > 5 * 1024 * 1024) {
+                alert('La imagen es muy grande. Máximo 5MB.');
+                return;
+            }
 
             // Validar tipo
             if (!file.type.startsWith('image/')) {
@@ -347,59 +330,38 @@
             }
 
             try {
-                // Comprimir imagen
-                const statusEl = type === 'ine' ? document.getElementById('ineStatus') : document.getElementById('vehicleStatus');
-                const previewEl = type === 'ine' ? document.getElementById('inePreview') : document.getElementById('vehiclePreview');
-                const previewImgEl = type === 'ine' ? document.getElementById('inePreviewImg') : document.getElementById('vehiclePreviewImg');
-
-                statusEl.textContent = '🔄 Comprimiendo imagen...';
-                statusEl.className = 'text-sm text-blue-600 mt-2 text-center';
-                previewEl.classList.remove('hidden');
-
-                const compressedFile = await compressImage(file, 1200, 0.7);
-
-                console.log(`Tamaño original: ${(file.size / 1024).toFixed(2)}KB`);
-                console.log(`Tamaño comprimido: ${(compressedFile.size / 1024).toFixed(2)}KB`);
-
-                // Guardar archivo comprimido
-                if (type === 'ine') {
-                    inePhotoFile = compressedFile;
-                } else {
-                    vehiclePhotoFile = compressedFile;
-                }
-
                 // Mostrar preview
                 const reader = new FileReader();
                 reader.onload = (e) => {
-                    previewImgEl.src = e.target.result;
-                    statusEl.textContent = `✓ Imagen lista (${(compressedFile.size / 1024).toFixed(0)}KB)`;
-                    statusEl.className = 'text-sm text-green-600 mt-2 text-center font-semibold';
+                    if (type === 'ine') {
+                        document.getElementById('inePreviewImg').src = e.target.result;
+                        document.getElementById('inePreview').classList.remove('hidden');
+                    } else {
+                        document.getElementById('vehiclePreviewImg').src = e.target.result;
+                        document.getElementById('vehiclePreview').classList.remove('hidden');
+                    }
                 };
-                reader.readAsDataURL(compressedFile);
+                reader.readAsDataURL(file);
 
+                // Subir archivo (simulado - en producción implementa el endpoint)
+                // Por ahora solo guardamos el base64
+                const base64 = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => resolve(e.target.result);
+                    reader.readAsDataURL(file);
+                });
+
+                // Guardar
+                if (type === 'ine') {
+                    document.getElementById('inePhotoUrl').value = base64;
+                    inePhotoUploaded = true;
+                } else {
+                    document.getElementById('vehiclePhotoUrl').value = base64;
+                    vehiclePhotoUploaded = true;
+                }
             } catch (error) {
-                console.error('Error procesando imagen:', error);
-                alert('Error al procesar la imagen. Por favor intenta con otra.');
+                alert('Error al procesar imagen: ' + error.message);
             }
-        }
-
-        async function uploadImageToBackend(file, fieldName) {
-            const formData = new FormData();
-            formData.append('image', file);
-            formData.append('folder', 'drivers');
-
-            const response = await fetch('/api/upload', {
-                method: 'POST',
-                body: formData
-            });
-
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.error || 'Error al subir imagen');
-            }
-
-            const data = await response.json();
-            return data.url;
         }
 
         document.getElementById('registerForm').addEventListener('submit', async (e) => {
@@ -407,70 +369,43 @@
             
             const errorDiv = document.getElementById('error');
             const successDiv = document.getElementById('success');
-            const submitBtn = document.getElementById('submitBtn');
-            
             errorDiv.classList.add('hidden');
             successDiv.classList.add('hidden');
 
             // Validar fotos para conductores
             if (currentRole === 'driver') {
-                if (!inePhotoFile) {
-                    alert('Debes seleccionar la foto de tu INE');
+                if (!inePhotoUploaded) {
+                    alert('Debes subir la foto de tu INE');
                     return;
                 }
-                if (!vehiclePhotoFile) {
-                    alert('Debes seleccionar la foto de tu vehículo');
+                if (!vehiclePhotoUploaded) {
+                    alert('Debes subir la foto de tu vehículo');
                     return;
                 }
             }
 
-            // Deshabilitar botón
-            submitBtn.disabled = true;
-            submitBtn.textContent = 'Registrando...';
+            const formData = {
+                name: document.getElementById('name').value,
+                phone: document.getElementById('phone').value,
+                email: document.getElementById('email').value,
+                password: document.getElementById('password').value,
+                role: currentRole
+            };
+
+            if (currentRole === 'client') {
+                formData.address = document.getElementById('address').value;
+            } else if (currentRole === 'driver') {
+                formData.vehicle = document.getElementById('vehicle').value;
+                formData.license = document.getElementById('license').value;
+                formData.inePhoto = document.getElementById('inePhotoUrl').value;
+                formData.vehiclePhoto = document.getElementById('vehiclePhotoUrl').value;
+            } else if (currentRole === 'store_owner') {
+                formData.businessName = document.getElementById('businessName').value;
+                formData.businessAddress = document.getElementById('businessAddress').value;
+                formData.businessType = document.getElementById('businessType').value;
+            }
 
             try {
-                const formData = {
-                    name: document.getElementById('name').value,
-                    phone: document.getElementById('phone').value,
-                    email: document.getElementById('email').value,
-                    password: document.getElementById('password').value,
-                    role: currentRole
-                };
-
-                if (currentRole === 'client') {
-                    formData.address = document.getElementById('address').value;
-                } else if (currentRole === 'driver') {
-                    formData.vehicle = document.getElementById('vehicle').value;
-                    formData.license = document.getElementById('license').value;
-
-                    // Subir imágenes al backend
-                    submitBtn.textContent = 'Subiendo foto de INE...';
-                    document.getElementById('ineStatus').textContent = '⏳ Subiendo...';
-                    document.getElementById('ineStatus').className = 'text-sm text-blue-600 mt-2 text-center';
-                    
-                    const ineUrl = await uploadImageToBackend(inePhotoFile, 'inePhoto');
-                    formData.inePhoto = ineUrl;
-                    
-                    document.getElementById('ineStatus').textContent = '✓ Subida exitosa';
-                    document.getElementById('ineStatus').className = 'text-sm text-green-600 mt-2 text-center font-semibold';
-
-                    submitBtn.textContent = 'Subiendo foto de vehículo...';
-                    document.getElementById('vehicleStatus').textContent = '⏳ Subiendo...';
-                    document.getElementById('vehicleStatus').className = 'text-sm text-blue-600 mt-2 text-center';
-                    
-                    const vehicleUrl = await uploadImageToBackend(vehiclePhotoFile, 'vehiclePhoto');
-                    formData.vehiclePhoto = vehicleUrl;
-                    
-                    document.getElementById('vehicleStatus').textContent = '✓ Subida exitosa';
-                    document.getElementById('vehicleStatus').className = 'text-sm text-green-600 mt-2 text-center font-semibold';
-                } else if (currentRole === 'store_owner') {
-                    formData.businessName = document.getElementById('businessName').value;
-                    formData.businessAddress = document.getElementById('businessAddress').value;
-                    formData.businessType = document.getElementById('businessType').value;
-                }
-
-                submitBtn.textContent = 'Creando cuenta...';
-
                 const response = await fetch('/api/auth/register', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -497,7 +432,7 @@
                     // Si es conductor, mostrar mensaje de éxito
                     successDiv.innerHTML = `
                         <div class="font-semibold mb-2">✅ Registro exitoso</div>
-                        <p class="text-sm">${data.message || 'Tu cuenta será revisada y aprobada pronto.'}</p>
+                        <p class="text-sm">${data.message}</p>
                         <a href="/" class="inline-block mt-3 text-blue-600 hover:text-blue-700 font-semibold">
                             Volver al login
                         </a>
@@ -506,20 +441,16 @@
                     document.getElementById('registerForm').reset();
                     document.getElementById('inePreview').classList.add('hidden');
                     document.getElementById('vehiclePreview').classList.add('hidden');
-                    inePhotoFile = null;
-                    vehiclePhotoFile = null;
+                    inePhotoUploaded = false;
+                    vehiclePhotoUploaded = false;
                 }
             } catch (error) {
-                console.error('Error en registro:', error);
                 errorDiv.textContent = error.message;
                 errorDiv.classList.remove('hidden');
-            } finally {
-                submitBtn.disabled = false;
-                submitBtn.textContent = 'Crear Cuenta';
             }
         });
     </script>
 <script src="/notifications.js"></script>
 </body>
 </html>
-<!-- v3.3 - Con compresión automática de imágenes -->
+<!-- v3.0 - Sistema completo: Cliente, Conductor y Dueño de Tienda -->

@@ -1,5 +1,6 @@
 // ============================================
 // SISTEMA DE NOTIFICACIONES - notifications.js
+// Con sonidos audibles agregados
 // ============================================
 
 class NotificationSystem {
@@ -7,6 +8,14 @@ class NotificationSystem {
         this.permission = 'default';
         this.socket = null;
         this.soundEnabled = true;
+        this.sounds = {
+            // Sonidos audibles desde API gratuita
+            newOrder: 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3', // Campana alegre
+            success: 'https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3', // Éxito
+            info: 'https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3', // Notificación
+            warning: 'https://assets.mixkit.co/active_storage/sfx/2357/2357-preview.mp3', // Advertencia
+            error: 'https://assets.mixkit.co/active_storage/sfx/2868/2868-preview.mp3' // Error
+        };
         this.init();
     }
 
@@ -20,6 +29,8 @@ class NotificationSystem {
         
         // Cargar preferencias
         this.loadPreferences();
+        
+        console.log('🔔 Sistema de notificaciones con sonido iniciado');
     }
 
     // Solicitar permiso para notificaciones
@@ -72,6 +83,54 @@ class NotificationSystem {
         });
     }
 
+    // Reproducir sonido audible
+    async playSoundFile(type = 'info') {
+        if (!this.soundEnabled) return;
+
+        try {
+            const soundUrl = this.sounds[type] || this.sounds.info;
+            const audio = new Audio(soundUrl);
+            audio.volume = 0.7;
+            await audio.play();
+        } catch (error) {
+            console.warn('⚠️ No se pudo reproducir sonido, usando beep:', error);
+            this.playBeep(type);
+        }
+    }
+
+    // Beep de respaldo
+    playBeep(type = 'info') {
+        if (!this.soundEnabled) return;
+
+        try {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            const frequencies = {
+                newOrder: 1000,
+                success: 880,
+                info: 800,
+                warning: 600,
+                error: 400
+            };
+            
+            oscillator.frequency.value = frequencies[type] || 800;
+            oscillator.type = 'sine';
+            
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+            
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.3);
+        } catch (error) {
+            console.error('Error al reproducir beep:', error);
+        }
+    }
+
     // Mostrar notificación
     show(data) {
         const {
@@ -81,7 +140,7 @@ class NotificationSystem {
             tag = 'default',
             url = null,
             sound = true,
-            type = 'info' // info, success, warning, error
+            type = 'info' // info, success, warning, error, newOrder
         } = data;
 
         // Notificación del navegador
@@ -91,8 +150,9 @@ class NotificationSystem {
                 icon: this.getIconUrl(icon),
                 tag,
                 badge: this.getIconUrl(icon),
-                requireInteraction: type === 'error' || type === 'warning',
-                silent: !this.soundEnabled
+                requireInteraction: type === 'error' || type === 'warning' || type === 'newOrder',
+                silent: true, // Usamos nuestro propio sonido
+                vibrate: type === 'newOrder' ? [200, 100, 200] : [200]
             });
 
             // Click en notificación
@@ -104,16 +164,24 @@ class NotificationSystem {
                 notification.close();
             };
 
-            // Auto-cerrar después de 5 segundos
-            setTimeout(() => notification.close(), 5000);
+            // Auto-cerrar después de 5 segundos (excepto newOrder)
+            if (type !== 'newOrder') {
+                setTimeout(() => notification.close(), 5000);
+            }
         }
 
         // Notificación in-app (toast)
         this.showToast(data);
 
-        // Sonido
+        // Reproducir sonido audible
         if (sound && this.soundEnabled) {
-            this.playSound(type);
+            this.playSoundFile(type);
+        }
+        
+        // Vibrar
+        if ('vibrate' in navigator) {
+            const pattern = type === 'newOrder' ? [200, 100, 200] : [200];
+            navigator.vibrate(pattern);
         }
     }
 
@@ -158,42 +226,6 @@ class NotificationSystem {
         }, duration);
     }
 
-    // Sonido de notificación
-    playSound(type = 'info') {
-        try {
-            const audio = new Audio();
-            
-            // Frecuencias diferentes por tipo
-            const frequencies = {
-                info: [800, 1000],
-                success: [800, 1200],
-                warning: [600, 800],
-                error: [400, 200]
-            };
-
-            const freq = frequencies[type] || frequencies.info;
-            
-            // Crear sonido con Web Audio API
-            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            const oscillator = audioContext.createOscillator();
-            const gainNode = audioContext.createGain();
-            
-            oscillator.connect(gainNode);
-            gainNode.connect(audioContext.destination);
-            
-            oscillator.frequency.value = freq[0];
-            oscillator.type = 'sine';
-            
-            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
-            
-            oscillator.start(audioContext.currentTime);
-            oscillator.stop(audioContext.currentTime + 0.2);
-        } catch (error) {
-            console.error('Error al reproducir sonido:', error);
-        }
-    }
-
     // Obtener URL de icono
     getIconUrl(icon) {
         // Para emojis, usar data URL
@@ -224,6 +256,12 @@ class NotificationSystem {
     toggleSound() {
         this.soundEnabled = !this.soundEnabled;
         this.savePreferences();
+        
+        // Reproducir sonido de prueba al activar
+        if (this.soundEnabled) {
+            this.playSoundFile('info');
+        }
+        
         return this.soundEnabled;
     }
 
@@ -271,10 +309,11 @@ class NotificationSystem {
     // Notificaciones específicas del negocio
     newOrder(orderNumber, amount) {
         this.show({
-            title: '🆕 Nuevo Pedido',
+            title: '🆕 ¡NUEVO PEDIDO!',
             body: `Pedido #${orderNumber} - $${amount}`,
-            type: 'success',
-            sound: true
+            type: 'newOrder',
+            sound: true,
+            icon: '🔔'
         });
     }
 
@@ -382,6 +421,11 @@ const notificationStyles = `
     border-left: 4px solid #3b82f6;
 }
 
+.notification-toast.notification-newOrder {
+    border-left: 4px solid #8b5cf6;
+    background: linear-gradient(to right, #faf5ff, white);
+}
+
 .notification-content {
     display: flex;
     align-items: start;
@@ -476,3 +520,12 @@ if (!document.getElementById('notification-styles')) {
 
 // Exportar instancia global
 window.notifications = new NotificationSystem();
+
+// Helper para probar
+window.testNotifications = () => {
+    setTimeout(() => notifications.newOrder('12345', '250.00'), 1000);
+    setTimeout(() => notifications.orderPickedUp('12345'), 3000);
+    setTimeout(() => notifications.orderDelivered('12345'), 5000);
+};
+
+console.log('✅ Sistema de notificaciones con sonido cargado');
