@@ -292,6 +292,25 @@
 
         async function viewDriverOrders(driverId, driverName) {
             try {
+                const data = await apiCall(`/admin/drivers/${driverId}/orders`);
+                const { driver, orders } = data;
+                
+                // Crear modal o alert con los pedidos
+                const ordersList = orders.map(o => {
+                    const commission = (o.commission || 0).toFixed(2);
+                    return `#${o.orderNumber} - ${o.status} - $${o.total} (Comisión: $${commission})`;
+                }).join('\n');
+                
+                alert(`Pedidos de ${driver.name}:\n\n${ordersList}\n\nTotal: ${orders.length} pedidos`);
+                
+            } catch (error) {
+                console.error('Error viendo pedidos:', error);
+                alert('Error al cargar pedidos del conductor');
+            }
+        }
+
+        async function viewDriverOrders(driverId, driverName) {
+            try {
                 const startOfWeek = new Date();
                 startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
                 startOfWeek.setHours(0, 0, 0, 0);
