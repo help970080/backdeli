@@ -1399,6 +1399,30 @@ app.get('/api/stats', authenticateToken, async (req, res) => {
           return new Date(o.createdAt).toDateString() === today;
         }).length
       };
+    } else if (userRole === 'admin') {
+      // Stats para administradores
+      const allStores = await Store.findAll();
+      const allOrders = await Order.findAll();
+      const completedOrders = allOrders.filter(o => o.status === 'delivered');
+      const today = new Date().toDateString();
+      
+      stats = {
+        totalStores: allStores.length,
+        totalProducts: await Product.count(),
+        totalOrders: allOrders.length,
+        activeOrders: allOrders.filter(o => !['delivered', 'cancelled'].includes(o.status)).length,
+        completedOrders: completedOrders.length,
+        totalRevenue: completedOrders.reduce((sum, o) => sum + (o.total || 0), 0),
+        platformEarnings: completedOrders.reduce((sum, o) => sum + (o.platformEarnings || 0), 0),
+        ordersToday: allOrders.filter(o => {
+          return new Date(o.createdAt).toDateString() === today;
+        }).length,
+        revenueToday: allOrders
+          .filter(o => {
+            return o.deliveredAt && new Date(o.deliveredAt).toDateString() === today;
+          })
+          .reduce((sum, o) => sum + (o.total || 0), 0)
+      };
     }
 
     res.json({ stats });
